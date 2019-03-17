@@ -9,6 +9,7 @@
 #include <osg/BlendFunc>
 #include <osg/Material>
 #include <osg/PositionAttitudeTransform>
+#include <osg/Switch>
 
 #include <osgParticle/ParticleSystem>
 #include <osgParticle/ParticleProcessor>
@@ -33,6 +34,7 @@
 #include <components/sceneutil/lightutil.hpp>
 #include <components/sceneutil/skeleton.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
+#include <components/sceneutil/util.hpp>
 
 #include <components/settings/settings.hpp>
 
@@ -77,10 +79,9 @@ namespace
 
         void remove()
         {
-            for (std::vector<osg::ref_ptr<osg::Node> >::iterator it = mToRemove.begin(); it != mToRemove.end(); ++it)
+            for (osg::Node* node : mToRemove)
             {
                 // FIXME: a Drawable might have more than one parent
-                osg::Node* node = *it;
                 if (node->getNumParents())
                     node->getParent(0)->removeChild(node);
             }
@@ -89,6 +90,47 @@ namespace
 
     private:
         std::vector<osg::ref_ptr<osg::Node> > mToRemove;
+    };
+
+    class DayNightCallback : public osg::NodeCallback
+    {
+    public:
+        DayNightCallback() : mCurrentState(0)
+        {
+        }
+
+        virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
+        {
+            unsigned int state = MWBase::Environment::get().getWorld()->getNightDayMode();
+            const unsigned int newState = node->asGroup()->getNumChildren() > state ? state : 0;
+
+            if (newState != mCurrentState)
+            {
+                mCurrentState = newState;
+                node->asSwitch()->setSingleChildOn(mCurrentState);
+            }
+
+            traverse(node, nv);
+        }
+
+    private:
+        unsigned int mCurrentState;
+    };
+
+    class AddSwitchCallbacksVisitor : public osg::NodeVisitor
+    {
+    public:
+        AddSwitchCallbacksVisitor()
+            : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+        { }
+
+        virtual void apply(osg::Switch &switchNode)
+        {
+            if (switchNode.getName() == Constants::NightDayLabel)
+                switchNode.addUpdateCallback(new DayNightCallback());
+
+            traverse(switchNode);
+        }
     };
 
     NifOsg::TextKeyMap::const_iterator findGroupStart(const NifOsg::TextKeyMap &keys, const std::string &groupname)
@@ -641,8 +683,6 @@ namespace MWRender
             mAnimationTimePtr[i].reset(new AnimationTime);
 
         mLightListCallback = new SceneUtil::LightListCallback;
-
-        mUseAdditionalSources = Settings::Manager::getBool ("use additional anim sources", "Game");
     }
 
     Animation::~Animation()
@@ -754,7 +794,8 @@ namespace MWRender
 
         addSingleAnimSource(kfname, baseModel);
 
-        if (mUseAdditionalSources)
+        static const bool useAdditionalSources = Settings::Manager::getBool ("use additional anim sources", "Game");
+        if (useAdditionalSources)
             loadAllAnimationsInFolder(kfname, baseModel);
     }
 
@@ -801,9 +842,9 @@ namespace MWRender
 
         if (!mAccumRoot)
         {
-            NodeMap::const_iterator found = nodeMap.find("root bone");
+            NodeMap::const_iterator found = nodeMap.find("bip01");
             if (found == nodeMap.end())
-                found = nodeMap.find("bip01");
+                found = nodeMap.find("root bone");
 
             if (found != nodeMap.end())
                 mAccumRoot = found->second;
@@ -1394,7 +1435,7 @@ namespace MWRender
                 return sceneMgr->createInstance(found->second);
         }
         else
-            return sceneMgr->createInstance(model);
+            return sceneMgr->getInstance(model);
     }
 
     void Animation::setObjectRoot(const std::string &model, bool forceskeleton, bool baseonly, bool isCreature)
@@ -1933,6 +1974,12 @@ namespace MWRender
             RemoveParticlesVisitor visitor;
             mObjectRoot->accept(visitor);
             visitor.remove();
+        }
+
+        if (SceneUtil::hasUserDescription(mObjectRoot, Constants::NightDayLabel))
+        {
+            AddSwitchCallbacksVisitor visitor;
+            mObjectRoot->accept(visitor);
         }
     }
 

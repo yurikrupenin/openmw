@@ -13,6 +13,7 @@
 #include "rendermode.hpp"
 
 #include <deque>
+#include <memory>
 
 namespace osg
 {
@@ -53,13 +54,14 @@ namespace Fallback
 
 namespace SceneUtil
 {
+    class ShadowManager;
     class WorkQueue;
     class UnrefQueue;
 }
 
 namespace DetourNavigator
 {
-    class Navigator;
+    struct Navigator;
     struct Settings;
 }
 
@@ -240,6 +242,8 @@ namespace MWRender
 
         void renderCameraToImage(osg::Camera *camera, osg::Image *image, int w, int h);
 
+        void updateNavMesh();
+
         osg::ref_ptr<osgUtil::IntersectionVisitor> getIntersectionVisitor(osgUtil::Intersector* intersector, bool ignorePlayer, bool ignoreActors);
 
         osg::ref_ptr<osgUtil::IntersectionVisitor> mIntersectionVisitor;
@@ -265,6 +269,7 @@ namespace MWRender
         TerrainStorage* mTerrainStorage;
         std::unique_ptr<SkyManager> mSky;
         std::unique_ptr<EffectManager> mEffectManager;
+        std::unique_ptr<SceneUtil::ShadowManager> mShadowManager;
         osg::ref_ptr<NpcAnimation> mPlayerAnimation;
         osg::ref_ptr<SceneUtil::PositionAttitudeTransform> mPlayerNode;
         std::unique_ptr<Camera> mCamera;

@@ -1,7 +1,5 @@
 #include "aiwander.hpp"
 
-#include <cfloat>
-
 #include <components/debug/debuglog.hpp>
 #include <components/misc/rng.hpp>
 #include <components/esm/aisequence.hpp>
@@ -10,7 +8,6 @@
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/dialoguemanager.hpp"
-#include "../mwbase/soundmanager.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -158,9 +155,9 @@ namespace MWMechanics
             }
             else
             {
-                const osg::Vec3f playerHalfExtents = MWBase::Environment::get().getWorld()->getHalfExtents(getPlayer()); // Using player half extents for better performance
+                const osg::Vec3f halfExtents = MWBase::Environment::get().getWorld()->getPathfindingHalfExtents(actor);
                 mPathFinder.buildPath(actor, pos.asVec3(), mDestination, actor.getCell(),
-                    getPathGridGraph(actor.getCell()), playerHalfExtents, getNavigatorFlags(actor));
+                    getPathGridGraph(actor.getCell()), halfExtents, getNavigatorFlags(actor));
             }
 
             if (mPathFinder.isPathConstructed())
@@ -168,8 +165,6 @@ namespace MWMechanics
         }
 
         doPerFrameActionsForState(actor, duration, storage);
-
-        playIdleDialogueRandomly(actor);
 
         float& lastReaction = storage.mReaction;
         lastReaction += duration;
@@ -209,7 +204,8 @@ namespace MWMechanics
         }
 
         bool actorCanMoveByZ = (actor.getClass().canSwim(actor) && MWBase::Environment::get().getWorld()->isSwimming(actor))
-            || MWBase::Environment::get().getWorld()->isFlying(actor);
+            || MWBase::Environment::get().getWorld()->isFlying(actor)
+            || !MWBase::Environment::get().getWorld()->isActorCollisionEnabled(actor);
 
         if(actorCanMoveByZ && mDistance > 0) {
             // Typically want to idle for a short time before the next wander
@@ -316,10 +312,9 @@ namespace MWMechanics
             if ((!isWaterCreature && !destinationIsAtWater(actor, mDestination)) ||
                 (isWaterCreature && !destinationThroughGround(currentPosition, mDestination)))
             {
-                // Using player half extents for better performance
-                const osg::Vec3f playerHalfExtents = MWBase::Environment::get().getWorld()->getHalfExtents(getPlayer());
+                const osg::Vec3f halfExtents = MWBase::Environment::get().getWorld()->getPathfindingHalfExtents(actor);
                 mPathFinder.buildPath(actor, currentPosition, mDestination, actor.getCell(),
-                    getPathGridGraph(actor.getCell()), playerHalfExtents, getNavigatorFlags(actor));
+                    getPathGridGraph(actor.getCell()), halfExtents, getNavigatorFlags(actor));
                 mPathFinder.addPointToPath(mDestination);
 
                 if (mPathFinder.isPathConstructed())
@@ -490,36 +485,6 @@ namespace MWMechanics
             stopWalking(actor, storage);
             storage.setState(AiWanderStorage::Wander_ChooseAction);
             storage.mStuckCount = 0;
-        }
-    }
-
-    void AiWander::playIdleDialogueRandomly(const MWWorld::Ptr& actor)
-    {
-        int hello = actor.getClass().getCreatureStats(actor).getAiSetting(CreatureStats::AI_Hello).getModified();
-        if (hello > 0 && !MWBase::Environment::get().getWorld()->isSwimming(actor)
-            && MWBase::Environment::get().getSoundManager()->sayDone(actor))
-        {
-            MWWorld::Ptr player = getPlayer();
-
-            static float fVoiceIdleOdds = MWBase::Environment::get().getWorld()->getStore()
-                .get<ESM::GameSetting>().find("fVoiceIdleOdds")->mValue.getFloat();
-
-            float roll = Misc::Rng::rollProbability() * 10000.0f;
-
-            // In vanilla MW the chance was FPS dependent, and did not allow proper changing of fVoiceIdleOdds
-            // due to the roll being an integer.
-            // Our implementation does not have these issues, so needs to be recalibrated. We chose to
-            // use the chance MW would have when run at 60 FPS with the default value of the GMST for calibration.
-            float x = fVoiceIdleOdds * 0.6f * (MWBase::Environment::get().getFrameDuration() / 0.1f);
-
-            // Only say Idle voices when player is in LOS
-            // A bit counterintuitive, likely vanilla did this to reduce the appearance of
-            // voices going through walls?
-            const osg::Vec3f playerPos(player.getRefData().getPosition().asVec3());
-            const osg::Vec3f actorPos(actor.getRefData().getPosition().asVec3());
-            if (roll < x && (playerPos - actorPos).length2() < 3000 * 3000 // maybe should be fAudioVoiceDefaultMaxDistance*fAudioMaxDistanceMult instead
-                && MWBase::Environment::get().getWorld()->getLOS(player, actor))
-                MWBase::Environment::get().getDialogueManager()->say(actor, "idle");
         }
     }
 

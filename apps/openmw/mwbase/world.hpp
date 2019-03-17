@@ -57,7 +57,7 @@ namespace MWMechanics
 
 namespace DetourNavigator
 {
-    class Navigator;
+    struct Navigator;
 }
 
 namespace MWWorld
@@ -134,6 +134,7 @@ namespace MWBase
 
             virtual MWWorld::Player& getPlayer() = 0;
             virtual MWWorld::Ptr getPlayerPtr() = 0;
+            virtual MWWorld::ConstPtr getPlayerConstPtr() const = 0;
 
             virtual const MWWorld::ESMStore& getStore() const = 0;
 
@@ -226,6 +227,8 @@ namespace MWBase
 
             virtual int getCurrentWeather() const = 0;
 
+            virtual unsigned int getNightDayMode() const = 0;
+
             virtual int getMasserPhase() const = 0;
 
             virtual int getSecundaPhase() const = 0;
@@ -303,12 +306,14 @@ namespace MWBase
             ///< Queues movement for \a ptr (in local space), to be applied in the next call to
             /// doPhysics.
 
+            virtual void updateAnimatedCollisionShape(const MWWorld::Ptr &ptr) = 0;
+
             virtual bool castRay (float x1, float y1, float z1, float x2, float y2, float z2, int mask) = 0;
             ///< cast a Ray and return true if there is an object in the ray path.
 
             virtual bool castRay (float x1, float y1, float z1, float x2, float y2, float z2) = 0;
 
-            virtual void setActorCollisionMode(const MWWorld::Ptr& ptr, bool enabled) = 0;
+            virtual void setActorCollisionMode(const MWWorld::Ptr& ptr, bool internal, bool external) = 0;
             virtual bool isActorCollisionEnabled(const MWWorld::Ptr& ptr) = 0;
 
             virtual bool toggleCollisionMode() = 0;
@@ -369,6 +374,7 @@ namespace MWBase
             /// \return pointer to created record
 
             virtual void update (float duration, bool paused) = 0;
+            virtual void updatePhysics (float duration, bool paused) = 0;
 
             virtual void updateWindowManager () = 0;
 
@@ -610,6 +616,9 @@ namespace MWBase
             virtual void removeActorPath(const MWWorld::ConstPtr& actor) const = 0;
 
             virtual void setNavMeshNumberToRender(const std::size_t value) = 0;
+
+            /// Return physical half extents of the given actor to be used in pathfinding
+            virtual osg::Vec3f getPathfindingHalfExtents(const MWWorld::ConstPtr& actor) const = 0;
     };
 }
 

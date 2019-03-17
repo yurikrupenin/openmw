@@ -308,6 +308,7 @@ namespace MWClass
             {
                 damage = attack[0] + ((attack[1]-attack[0])*attackStrength);
                 MWMechanics::adjustWeaponDamage(damage, weapon, ptr);
+                MWMechanics::resistNormalWeapon(victim, ptr, weapon, damage);
                 MWMechanics::reduceWeaponCondition(damage, true, weapon, ptr);
             }
 
@@ -381,9 +382,6 @@ namespace MWClass
 
         if (!object.isEmpty())
             stats.setLastHitObject(object.getCellRef().getRefId());
-
-        if (damage > 0.0f && !object.isEmpty())
-            MWMechanics::resistNormalWeapon(ptr, attacker, object, damage);
 
         if (damage < 0.001f)
             damage = 0;
@@ -610,11 +608,7 @@ namespace MWClass
 
     int Creature::getServices(const MWWorld::ConstPtr &actor) const
     {
-        const MWWorld::LiveCellRef<ESM::Creature>* ref = actor.get<ESM::Creature>();
-        if (ref->mBase->mHasAI)
-            return ref->mBase->mAiData.mServices;
-        else
-            return 0;
+        return actor.get<ESM::Creature>()->mBase->mAiData.mServices;
     }
 
     bool Creature::isPersistent(const MWWorld::ConstPtr &actor) const
@@ -625,34 +619,59 @@ namespace MWClass
 
     std::string Creature::getSoundIdFromSndGen(const MWWorld::Ptr &ptr, const std::string &name) const
     {
-        const MWWorld::Store<ESM::SoundGenerator> &store = MWBase::Environment::get().getWorld()->getStore().get<ESM::SoundGenerator>();
-
         int type = getSndGenTypeFromName(ptr, name);
-        if(type >= 0)
+        if (type < 0)
+            return std::string();
+
+        std::vector<const ESM::SoundGenerator*> sounds;
+        std::vector<const ESM::SoundGenerator*> fallbacksounds;
+
+        MWWorld::LiveCellRef<ESM::Creature>* ref = ptr.get<ESM::Creature>();
+
+        const std::string& ourId = (ref->mBase->mOriginal.empty()) ? ptr.getCellRef().getRefId() : ref->mBase->mOriginal;
+
+        const MWWorld::ESMStore &store = MWBase::Environment::get().getWorld()->getStore();
+        auto sound = store.get<ESM::SoundGenerator>().begin();
+        while (sound != store.get<ESM::SoundGenerator>().end())
         {
-            std::vector<const ESM::SoundGenerator*> sounds;
-            std::vector<const ESM::SoundGenerator*> fallbacksounds;
-
-            MWWorld::LiveCellRef<ESM::Creature>* ref = ptr.get<ESM::Creature>();
-
-            const std::string& ourId = (ref->mBase->mOriginal.empty()) ? ptr.getCellRef().getRefId() : ref->mBase->mOriginal;
-
-            MWWorld::Store<ESM::SoundGenerator>::iterator sound = store.begin();
-            while (sound != store.end())
-            {
-                if (type == sound->mType && !sound->mCreature.empty() && (Misc::StringUtils::ciEqual(ourId, sound->mCreature)))
-                    sounds.push_back(&*sound);
-                if (type == sound->mType && sound->mCreature.empty())
-                    fallbacksounds.push_back(&*sound);
-                ++sound;
-            }
-            if (!sounds.empty())
-                return sounds[Misc::Rng::rollDice(sounds.size())]->mSound;
-            if (!fallbacksounds.empty())
-                return fallbacksounds[Misc::Rng::rollDice(fallbacksounds.size())]->mSound;
+            if (type == sound->mType && !sound->mCreature.empty() && Misc::StringUtils::ciEqual(ourId, sound->mCreature))
+                sounds.push_back(&*sound);
+            if (type == sound->mType && sound->mCreature.empty())
+                fallbacksounds.push_back(&*sound);
+            ++sound;
         }
 
-        return "";
+        if (sounds.empty())
+        {
+            const std::string model = getModel(ptr);
+            if (!model.empty())
+            {
+                for (const ESM::Creature &creature : store.get<ESM::Creature>())
+                {
+                    if (creature.mId != ourId && creature.mOriginal != ourId && !creature.mModel.empty()
+                     && Misc::StringUtils::ciEqual(model, "meshes\\" + creature.mModel))
+                    {
+                        const std::string& fallbackId = !creature.mOriginal.empty() ? creature.mOriginal : creature.mId;
+                        sound = store.get<ESM::SoundGenerator>().begin();
+                        while (sound != store.get<ESM::SoundGenerator>().end())
+                        {
+                            if (type == sound->mType && !sound->mCreature.empty()
+                             && Misc::StringUtils::ciEqual(fallbackId, sound->mCreature))
+                                sounds.push_back(&*sound);
+                            ++sound;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!sounds.empty())
+            return sounds[Misc::Rng::rollDice(sounds.size())]->mSound;
+        if (!fallbacksounds.empty())
+            return fallbacksounds[Misc::Rng::rollDice(fallbacksounds.size())]->mSound;
+
+        return std::string();
     }
 
     MWWorld::Ptr Creature::copyToCellImpl(const MWWorld::ConstPtr &ptr, MWWorld::CellStore &cell) const

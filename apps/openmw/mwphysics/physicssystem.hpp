@@ -92,8 +92,6 @@ namespace MWPhysics
             const HeightField* getHeightField(int x, int y) const;
 
             bool toggleCollisionMode();
-            bool isActorCollisionEnabled(const MWWorld::Ptr& ptr);
-            void setActorCollisionMode(const MWWorld::Ptr& ptr, bool enabled);
 
             void stepSimulation(float dt);
             void debugDraw();
@@ -138,6 +136,9 @@ namespace MWPhysics
             /// Get physical half extents (scaled) of the given actor.
             osg::Vec3f getHalfExtents(const MWWorld::ConstPtr& actor) const;
 
+            /// Get physical half extents (not scaled) of the given actor.
+            osg::Vec3f getOriginalHalfExtents(const MWWorld::ConstPtr& actor) const;
+
             /// @see MWPhysics::Actor::getRenderingHalfExtents
             osg::Vec3f getRenderingHalfExtents(const MWWorld::ConstPtr& actor) const;
 
@@ -177,6 +178,8 @@ namespace MWPhysics
             void markAsNonSolid (const MWWorld::ConstPtr& ptr);
 
             bool isOnSolidGround (const MWWorld::Ptr& actor) const;
+
+            void updateAnimatedCollisionShape(const MWWorld::Ptr& object);
 
             template <class Function>
             void forEachAnimatedObject(Function&& function) const

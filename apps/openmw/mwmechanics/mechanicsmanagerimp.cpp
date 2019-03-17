@@ -1,8 +1,5 @@
 #include "mechanicsmanagerimp.hpp"
 
-#include <limits.h>
-#include <set>
-
 #include <components/misc/rng.hpp>
 
 #include <components/esm/esmwriter.hpp>
@@ -24,7 +21,6 @@
 
 #include "aicombat.hpp"
 #include "aipursue.hpp"
-#include "aitravel.hpp"
 #include "spellcasting.hpp"
 #include "autocalcspell.hpp"
 #include "npcstats.hpp"
@@ -239,7 +235,7 @@ namespace MWMechanics
     // mWatchedTimeToStartDrowning = -1 for correct drowning state check,
     // if stats.getTimeToStartDrowning() == 0 already on game start
     MechanicsManager::MechanicsManager()
-    : mWatchedTimeToStartDrowning(-1), mWatchedStatsEmpty (true), mUpdatePlayer (true), mClassSelected (false),
+    : mWatchedLevel(-1), mWatchedTimeToStartDrowning(-1), mWatchedStatsEmpty (true), mUpdatePlayer (true), mClassSelected (false),
       mRaceSelected (false), mAI(true)
     {
         //buildPlayer no longer here, needs to be done explicitly after all subsystems are up and running
@@ -294,7 +290,9 @@ namespace MWMechanics
     void MechanicsManager::advanceTime (float duration)
     {
         // Uses ingame time, but scaled to real time
-        duration /= MWBase::Environment::get().getWorld()->getTimeScaleFactor();
+        const float timeScaleFactor = MWBase::Environment::get().getWorld()->getTimeScaleFactor();
+        if (timeScaleFactor != 0.0f)
+            duration /= timeScaleFactor;
         MWWorld::Ptr player = getPlayer();
         player.getClass().getInventoryStore(player).rechargeItems(duration);
     }
@@ -364,7 +362,11 @@ namespace MWMechanics
                 }
             }
 
-            winMgr->setValue("level", stats.getLevel());
+            if(stats.getLevel() != mWatchedLevel)
+            {
+                mWatchedLevel = stats.getLevel();
+                winMgr->setValue("level", mWatchedLevel);
+            }
 
             mWatchedStatsEmpty = false;
 
@@ -380,10 +382,15 @@ namespace MWMechanics
             MWWorld::ContainerStoreIterator enchantItem = inv.getSelectedEnchantItem();
             if (enchantItem != inv.end())
                 winMgr->setSelectedEnchantItem(*enchantItem);
-            else if (!winMgr->getSelectedSpell().empty())
-                winMgr->setSelectedSpell(winMgr->getSelectedSpell(), int(MWMechanics::getSpellSuccessChance(winMgr->getSelectedSpell(), mWatched)));
             else
-                winMgr->unsetSelectedSpell();
+            {
+                const std::string& spell = winMgr->getSelectedSpell();
+                if (!spell.empty())
+                    winMgr->setSelectedSpell(spell, int(MWMechanics::getSpellSuccessChance(spell, mWatched)));
+                else
+                    winMgr->unsetSelectedSpell();
+            }
+
         }
 
         if (mUpdatePlayer)
@@ -845,6 +852,20 @@ namespace MWMechanics
             return false;
     }
 
+    bool MechanicsManager::onOpen(const MWWorld::Ptr& ptr)
+    {
+        if(ptr.getClass().isActor())
+            return true;
+        else
+            return mObjects.onOpen(ptr);
+    }
+
+    void MechanicsManager::onClose(const MWWorld::Ptr& ptr)
+    {
+        if(!ptr.getClass().isActor())
+            mObjects.onClose(ptr);
+    }
+
     void MechanicsManager::persistAnimationStates()
     {
         mActors.persistAnimationStates();
@@ -1170,8 +1191,7 @@ namespace MWMechanics
 
         if (!Misc::StringUtils::ciEqual(item.getCellRef().getRefId(), MWWorld::ContainerStore::sGoldId))
         {
-            const MWWorld::Ptr victimRef = MWBase::Environment::get().getWorld()->searchPtr(ownerCellRef->getOwner(), true);
-            if (victimRef.isEmpty() || !victimRef.getClass().getCreatureStats(victimRef).isDead())
+            if (victim.isEmpty() || (victim.getClass().isActor() && !victim.getClass().getCreatureStats(victim).isDead()))
                 mStolenItems[Misc::StringUtils::lowerCase(item.getCellRef().getRefId())][owner] += count;
         }
         if (alarm)

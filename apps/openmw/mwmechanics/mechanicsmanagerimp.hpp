@@ -30,6 +30,8 @@ namespace MWMechanics
             DynamicStat<float> mWatchedMagicka;
             DynamicStat<float> mWatchedFatigue;
 
+            int mWatchedLevel;
+
             float mWatchedTimeToStartDrowning;
 
             bool mWatchedStatsEmpty;
@@ -181,6 +183,9 @@ namespace MWMechanics
             virtual bool isAIActive() override;
 
             virtual void playerLoaded() override;
+
+            virtual bool onOpen(const MWWorld::Ptr& ptr) override;
+            virtual void onClose(const MWWorld::Ptr& ptr) override;
 
             virtual int countSavedGameRecords() const override;
 

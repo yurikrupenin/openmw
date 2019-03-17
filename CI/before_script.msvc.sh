@@ -31,8 +31,11 @@ SKIP_EXTRACT=""
 KEEP=""
 UNITY_BUILD=""
 VS_VERSION=""
+NMAKE=""
 PLATFORM=""
 CONFIGURATION=""
+TEST_FRAMEWORK=""
+GOOGLE_INSTALL_ROOT=""
 
 while [ $# -gt 0 ]; do
 	ARGSTR=$1
@@ -66,6 +69,9 @@ while [ $# -gt 0 ]; do
 				VS_VERSION=$1
 				shift ;;
 
+			n )
+				NMAKE=true ;;
+
 			p )
 				PLATFORM=$1
 				shift ;;
@@ -73,6 +79,9 @@ while [ $# -gt 0 ]; do
 			c )
 				CONFIGURATION=$1
 				shift ;;
+
+			t )
+				TEST_FRAMEWORK=true ;;
 
 			h )
 				cat <<EOF
@@ -90,10 +99,14 @@ Options:
 		Keep the old build directory, default is to delete it.
 	-p <Win32/Win64>
 		Set the build platform, can also be set with environment variable PLATFORM.
+	-t
+		Build unit tests / Google test
 	-u
 		Configure for unity builds.
 	-v <2013/2015/2017>
 		Choose the Visual Studio version to use.
+	-n
+		Produce NMake makefiles instead of a Visual Studio solution.
 	-V
 		Run verbosely
 EOF
@@ -107,6 +120,10 @@ EOF
 		esac
 	done
 done
+
+if [ -n "$NMAKE" ]; then
+	command -v nmake -? >/dev/null 2>&1 || { echo "Error: nmake (NMake) is not on the path. Make sure you have the necessary environment variables set for command-line C++ development (for example, by starting from a Developer Command Prompt)."; exit 1; }
+fi
 
 if [ -z $VERBOSE ]; then
 	STRIP="> /dev/null 2>&1"
@@ -267,18 +284,12 @@ case $PLATFORM in
 		ARCHNAME="x86-64"
 		ARCHSUFFIX="64"
 		BITS="64"
-
-		BASE_OPTS="-G\"$GENERATOR Win64\""
-		add_cmake_opts "-G\"$GENERATOR Win64\""
 		;;
 
 	x32|x86|i686|i386|win32|Win32 )
 		ARCHNAME="x86"
 		ARCHSUFFIX="86"
 		BITS="32"
-
-		BASE_OPTS="-G\"$GENERATOR\""
-		add_cmake_opts "-G\"$GENERATOR\""
 		;;
 
 	* )
@@ -304,12 +315,22 @@ case $CONFIGURATION in
 		;;
 esac
 
-if ! [ -z $UNITY_BUILD ]; then
-	add_cmake_opts "-DOPENMW_UNITY_BUILD=True"
-fi
-
 if [ ${BITS} -eq 64 ]; then
 	GENERATOR="${GENERATOR} Win64"
+fi
+
+if [ -n "$NMAKE" ]; then
+	GENERATOR="NMake Makefiles"
+fi
+
+add_cmake_opts "-G\"$GENERATOR\""
+
+if [ -n "$NMAKE" ]; then
+	add_cmake_opts "-DCMAKE_BUILD_TYPE=${BUILD_CONFIG}"
+fi
+
+if ! [ -z $UNITY_BUILD ]; then
+	add_cmake_opts "-DOPENMW_UNITY_BUILD=True"
 fi
 
 echo
@@ -381,12 +402,27 @@ if [ -z $SKIP_DOWNLOAD ]; then
 	download "SDL 2.0.7" \
 		"https://www.libsdl.org/release/SDL2-devel-2.0.7-VC.zip" \
 		"SDL2-2.0.7.zip"
+
+	# Google test and mock
+	if [ ! -z $TEST_FRAMEWORK ]; then
+		echo "Google test 1.8.1..."
+		if [ -d googletest ]; then
+			printf "  Google test exists, skipping."
+		else
+			git clone -b release-1.8.1 https://github.com/google/googletest.git
+		fi
+	fi
 fi
 
 cd .. #/..
 
 # Set up dependencies
 BUILD_DIR="MSVC${MSVC_DISPLAY_YEAR}_${BITS}"
+
+if [ -n "$NMAKE" ]; then
+	BUILD_DIR="${BUILD_DIR}_NMake_${BUILD_CONFIG}"
+fi
+
 if [ -z $KEEP ]; then
 	echo
 	echo "(Re)Creating build directory."
@@ -410,7 +446,7 @@ echo
 if [ -z $APPVEYOR ]; then
 	printf "Boost 1.67.0... "
 else
-	if [ $MSVC_VER -eq 12.0 ]; then
+	if [ "${MSVC_VER}" -eq 12.0 ]; then
 		printf "Boost 1.58.0 AppVeyor... "
 	else
 		printf "Boost 1.67.0 AppVeyor... "
@@ -572,9 +608,9 @@ printf "OSG 3.4.1-scrawl... "
 		SUFFIX=""
 	fi
 	add_runtime_dlls "$(pwd)/OSG/bin/"{OpenThreads,zlib,libpng*}${SUFFIX}.dll \
-		"$(pwd)/OSG/bin/osg"{,Animation,DB,FX,GA,Particle,Text,Util,Viewer}${SUFFIX}.dll
-	add_osg_dlls "$(pwd)/OSG/bin/osgPlugins-3.4.1/osgdb_"{bmp,dds,jpeg,osg,png,tga}${SUFFIX}.dll
-	add_osg_dlls "$(pwd)/OSG/bin/osgPlugins-3.4.1/osgdb_serializers_osg"{,animation,fx,ga,particle,text,util,viewer}${SUFFIX}.dll
+		"$(pwd)/OSG/bin/osg"{,Animation,DB,FX,GA,Particle,Text,Util,Viewer,Shadow}${SUFFIX}.dll
+	add_osg_dlls "$(pwd)/OSG/bin/osgPlugins-3.4.1/osgdb_"{bmp,dds,freetype,jpeg,osg,png,tga}${SUFFIX}.dll
+	add_osg_dlls "$(pwd)/OSG/bin/osgPlugins-3.4.1/osgdb_serializers_osg"{,animation,fx,ga,particle,text,util,viewer,shadow}${SUFFIX}.dll
 	echo Done.
 }
 cd $DEPS
@@ -651,6 +687,52 @@ printf "SDL 2.0.7... "
 	add_runtime_dlls "$(pwd)/SDL2-2.0.7/lib/x${ARCHSUFFIX}/SDL2.dll"
 	echo Done.
 }
+cd $DEPS
+echo
+# Google Test and Google Mock
+if [ ! -z $TEST_FRAMEWORK ]; then
+	printf "Google test 1.8.1 ..."
+
+	cd googletest
+	if [ ! -d build ]; then
+		mkdir build
+	fi
+
+	cd build
+
+	GOOGLE_INSTALL_ROOT="${DEPS_INSTALL}/GoogleTest"
+	if [ $CONFIGURATION == "Debug" ]; then
+			DEBUG_SUFFIX="d"
+		else
+			DEBUG_SUFFIX=""
+	fi
+
+	if [ ! -d $GOOGLE_INSTALL_ROOT ]; then
+
+		cmake .. -DCMAKE_BUILD_TYPE="${CONFIGURATION}" -DCMAKE_INSTALL_PREFIX="${GOOGLE_INSTALL_ROOT}" -DCMAKE_USE_WIN32_THREADS_INIT=1 -G "${GENERATOR}" -DBUILD_SHARED_LIBS=1
+		cmake --build . --config "${CONFIGURATION}"
+		cmake --build . --target install --config "${CONFIGURATION}"
+
+		add_runtime_dlls "${GOOGLE_INSTALL_ROOT}\bin\gtest_main${DEBUG_SUFFIX}.dll"
+		add_runtime_dlls "${GOOGLE_INSTALL_ROOT}\bin\gtest${DEBUG_SUFFIX}.dll"
+		add_runtime_dlls "${GOOGLE_INSTALL_ROOT}\bin\gmock_main${DEBUG_SUFFIX}.dll"
+		add_runtime_dlls "${GOOGLE_INSTALL_ROOT}\bin\gmock${DEBUG_SUFFIX}.dll"
+	fi
+
+	add_cmake_opts -DBUILD_UNITTESTS=yes
+	# FindGTest and FindGMock do not work perfectly on Windows
+	# but we can help them by telling them everything we know about installation
+	add_cmake_opts -DGMOCK_ROOT="$GOOGLE_INSTALL_ROOT"
+	add_cmake_opts -DGTEST_ROOT="$GOOGLE_INSTALL_ROOT"
+	add_cmake_opts -DGTEST_LIBRARY="$GOOGLE_INSTALL_ROOT/lib/gtest${DEBUG_SUFFIX}.lib"
+	add_cmake_opts -DGTEST_MAIN_LIBRARY="$GOOGLE_INSTALL_ROOT/lib/gtest_main${DEBUG_SUFFIX}.lib"
+	add_cmake_opts -DGMOCK_LIBRARY="$GOOGLE_INSTALL_ROOT/lib/gmock${DEBUG_SUFFIX}.lib"
+	add_cmake_opts -DGMOCK_MAIN_LIBRARY="$GOOGLE_INSTALL_ROOT/lib/gmock_main${DEBUG_SUFFIX}.lib"
+	add_cmake_opts -DGTEST_LINKED_AS_SHARED_LIBRARY=True
+	echo Done.
+
+fi
+
 echo
 cd $DEPS_INSTALL/..
 echo
@@ -696,7 +778,11 @@ fi
 # NOTE: Disable this when/if we want to run test cases
 #if [ -z $CI ]; then
 	echo "- Copying Runtime DLLs..."
-	mkdir -p $BUILD_CONFIG
+	DLL_PREFIX=""
+	if [ -z $NMAKE ]; then
+		mkdir -p $BUILD_CONFIG
+		DLL_PREFIX="$BUILD_CONFIG/"
+	fi
 	for DLL in $RUNTIME_DLLS; do
 		TARGET="$(basename "$DLL")"
 		if [[ "$DLL" == *":"* ]]; then
@@ -705,21 +791,21 @@ fi
 			TARGET=${SPLIT[1]}
 		fi
 		echo "    ${TARGET}."
-		cp "$DLL" "$BUILD_CONFIG/$TARGET"
+		cp "$DLL" "${DLL_PREFIX}$TARGET"
 	done
 	echo
 	echo "- OSG Plugin DLLs..."
-	mkdir -p $BUILD_CONFIG/osgPlugins-3.4.1
+	mkdir -p ${DLL_PREFIX}osgPlugins-3.4.1
 	for DLL in $OSG_PLUGINS; do
 		echo "    $(basename $DLL)."
-		cp "$DLL" $BUILD_CONFIG/osgPlugins-3.4.1
+		cp "$DLL" ${DLL_PREFIX}osgPlugins-3.4.1
 	done
 	echo
 	echo "- Qt Platform DLLs..."
-	mkdir -p ${BUILD_CONFIG}/platforms
+	mkdir -p ${DLL_PREFIX}platforms
 	for DLL in $QT_PLATFORMS; do
 		echo "    $(basename $DLL)"
-		cp "$DLL" "${BUILD_CONFIG}/platforms"
+		cp "$DLL" "${DLL_PREFIX}platforms"
 	done
 	echo
 #fi
