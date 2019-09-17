@@ -1,5 +1,7 @@
 #include "lightmanager.hpp"
 
+#include <algorithm>
+
 #include <osgUtil/CullVisitor>
 
 #include <components/sceneutil/util.hpp>
@@ -353,6 +355,28 @@ namespace SceneUtil
         return mStartLight;
     }
 
+    void LightManager::registerPbrLight(osg::Light *light)
+    {
+        mPbrLights.push_back(light);
+    }
+
+    std::vector<osg::Light*> LightManager::getPbrLightsList()
+    {
+        static unsigned int lastReturnedSize = mPbrLights.size();
+
+        // perform cleanup once in a while
+        // TODO: totally doesn't work, invalid lights are not set to nullptr
+        if (mPbrLights.size() - lastReturnedSize > 100)
+        {   
+            mPbrLights.erase(std::remove(std::begin(mPbrLights), std::end(mPbrLights), nullptr), std::end(mPbrLights));
+
+            lastReturnedSize = mPbrLights.size();
+        }
+
+
+        return mPbrLights;
+    }
+
     static int sLightId = 0;
 
     LightSource::LightSource()
@@ -474,6 +498,7 @@ namespace SceneUtil
                     while (lightList.size() > maxLights)
                         lightList.pop_back();
                 }
+
                 stateset = mLightManager->getLightListStateSet(lightList, cv->getTraversalNumber());
             }
             else

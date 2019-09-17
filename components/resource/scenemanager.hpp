@@ -9,6 +9,9 @@
 #include <osg/Node>
 #include <osg/Texture>
 
+#include <components/sceneutil/lightmanager.hpp>
+#include <components/shader/shadervisitor.hpp>
+
 #include "resourcemanager.hpp"
 
 namespace Resource
@@ -55,6 +58,10 @@ namespace Resource
         /// @see ShaderVisitor::setForceShaders
         void setForceShaders(bool force);
         bool getForceShaders() const;
+
+        void addShaderUniform(osg::Uniform *uniform);
+
+        void setLightManager(SceneUtil::LightManager *mgr);
 
         void setClampLighting(bool clamp);
         bool getClampLighting() const;
@@ -163,6 +170,7 @@ namespace Resource
 
         Resource::ImageManager* mImageManager;
         Resource::NifFileManager* mNifFileManager;
+        SceneUtil::LightManager* mLightMgr;
 
         osg::Texture::FilterMode mMinFilter;
         osg::Texture::FilterMode mMagFilter;
@@ -170,6 +178,8 @@ namespace Resource
         bool mUnRefImageDataAfterApply;
 
         osg::ref_ptr<osgUtil::IncrementalCompileOperation> mIncrementalCompileOperation;
+
+        Shader::ShaderVisitor::UniformList mShaderUniforms;
 
         unsigned int mParticleSystemMask;
 

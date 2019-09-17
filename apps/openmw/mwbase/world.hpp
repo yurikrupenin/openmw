@@ -7,6 +7,7 @@
 #include <deque>
 
 #include <components/esm/cellid.hpp>
+#include <components/sceneutil/lightmanager.hpp>
 
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/doorstate.hpp"
@@ -129,6 +130,8 @@ namespace MWBase
             virtual MWWorld::Player& getPlayer() = 0;
             virtual MWWorld::Ptr getPlayerPtr() = 0;
             virtual MWWorld::ConstPtr getPlayerConstPtr() const = 0;
+
+            virtual SceneUtil::LightManager *getLightManager() = 0;
 
             virtual const MWWorld::ESMStore& getStore() const = 0;
 

@@ -5,6 +5,7 @@
 
 #include <components/settings/settings.hpp>
 #include <components/fallback/fallback.hpp>
+#include <components/sceneutil/lightmanager.hpp>
 
 #include "../mwbase/world.hpp"
 
@@ -139,6 +140,8 @@ namespace MWWorld
             void preloadSpells();
 
             MWWorld::Ptr getFacedObject(float maxDistance, bool ignorePlayer=true);
+
+            SceneUtil::LightManager *getLightManager() override;
 
     public: // FIXME
             void addContainerScripts(const Ptr& reference, CellStore* cell) override;

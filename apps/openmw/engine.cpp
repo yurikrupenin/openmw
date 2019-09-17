@@ -66,6 +66,26 @@ namespace
         if (ret != 0)
             Log(Debug::Error) << "SDL error: " << SDL_GetError();
     }
+
+    class CameraCallback : public osg::Uniform::Callback
+    {
+        osg::ref_ptr<osg::Camera> mCamera;
+    public:
+
+        CameraCallback(osg::Camera* cam)
+        {
+            mCamera = cam;
+        }
+
+        virtual void operator()(osg::Uniform* uniform,
+            osg::NodeVisitor* nv)
+        {
+            osg::Vec3 eye, center, up;
+            mCamera->getViewMatrixAsLookAt(eye, center, up);
+
+            uniform->set(osg::Vec3(eye.x(), eye.y(), eye.z()));
+        }
+    };
 }
 
 void OMW::Engine::executeLocalScripts()
@@ -429,6 +449,10 @@ void OMW::Engine::createWindow(Settings::Manager& settings)
 
     osg::ref_ptr<osg::Camera> camera = mViewer->getCamera();
     camera->setGraphicsContext(graphicsWindow);
+
+    camera->getGraphicsContext()->getState()->setUseModelViewAndProjectionUniforms(true);
+    camera->getGraphicsContext()->getState()->setUseVertexAttributeAliasing(true);
+
     camera->setViewport(0, 0, traits->width, traits->height);
 
     mViewer->realize();
@@ -567,6 +591,17 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
 
     window->setStore(mEnvironment.getWorld()->getStore());
     window->initUI();
+
+    // create shader callbacks
+    osg::ref_ptr<osg::Camera> camera = mViewer->getCamera();
+
+    osg::Vec3 eye, center, up;
+    camera->getViewMatrixAsLookAt(eye, center, up);
+
+    osg::ref_ptr<osg::Uniform> cameraPosition = new osg::Uniform("camPos", eye);
+    cameraPosition->setUpdateCallback(new CameraCallback(camera));
+
+    mResourceSystem->getSceneManager()->addShaderUniform(cameraPosition);
 
     //Load translation data
     mTranslationDataStorage.setEncoder(mEncoder);

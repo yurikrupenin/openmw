@@ -20,6 +20,7 @@
 
 #include <components/resource/bulletshape.hpp>
 #include <components/resource/resourcesystem.hpp>
+#include <components/resource/scenemanager.hpp>
 
 #include <components/sceneutil/positionattitudetransform.hpp>
 
@@ -2022,6 +2023,11 @@ namespace MWWorld
         else
             mDistanceToFacedObject = -1;
         return facedObject;
+    }
+
+    SceneUtil::LightManager *World::getLightManager()
+    {
+        return dynamic_cast<SceneUtil::LightManager*>(mRendering->getLightRoot());
     }
 
     bool World::isCellExterior() const

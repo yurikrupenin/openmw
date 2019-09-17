@@ -2,6 +2,9 @@
 
 #include <cstdlib>
 
+#include <utility>
+#include <vector>
+
 #include <osg/Node>
 #include <osg/UserDataContainer>
 
@@ -223,6 +226,7 @@ namespace Resource
         , mInstanceCache(new MultiObjectCache)
         , mSharedStateManager(new SharedStateManager)
         , mImageManager(imageManager)
+        , mLightMgr(nullptr)
         , mNifFileManager(nifFileManager)
         , mMinFilter(osg::Texture::LINEAR_MIPMAP_LINEAR)
         , mMagFilter(osg::Texture::LINEAR)
@@ -240,6 +244,16 @@ namespace Resource
     bool SceneManager::getForceShaders() const
     {
         return mForceShaders;
+    }
+
+    void SceneManager::addShaderUniform(osg::Uniform *uniform)
+    {
+        mShaderUniforms.push_back(uniform);
+    }
+
+    void SceneManager::setLightManager(SceneUtil::LightManager *mgr)
+    {
+        mLightMgr = mgr;
     }
 
     void SceneManager::recreateShaders(osg::ref_ptr<osg::Node> node)
@@ -466,6 +480,7 @@ namespace Resource
         return options;
     }
 
+    /* TODO insert PBR here */
     osg::ref_ptr<const osg::Node> SceneManager::getTemplate(const std::string &name)
     {
         std::string normalized = name;
@@ -744,7 +759,8 @@ namespace Resource
 
     Shader::ShaderVisitor *SceneManager::createShaderVisitor()
     {
-        Shader::ShaderVisitor* shaderVisitor = new Shader::ShaderVisitor(*mShaderManager.get(), *mImageManager, "objects_vertex.glsl", "objects_fragment.glsl");
+        // TODO: make shading pipeline configurable at runtime
+        Shader::ShaderVisitor* shaderVisitor = new Shader::ShaderVisitor(*mShaderManager.get(), *mImageManager, *mLightMgr, "pbr_vertex.glsl", "pbr_fragment.glsl", mShaderUniforms);
         shaderVisitor->setForceShaders(mForceShaders);
         shaderVisitor->setAutoUseNormalMaps(mAutoUseNormalMaps);
         shaderVisitor->setNormalMapPattern(mNormalMapPattern);

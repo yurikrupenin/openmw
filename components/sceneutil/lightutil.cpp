@@ -87,6 +87,13 @@ namespace SceneUtil
 
         osg::ref_ptr<LightSource> lightSource = createLightSource(esmLight, lightMask, isExterior);
         attachTo->addChild(lightSource);
+
+        auto lightMgr = SceneUtil::findLightManager(node->getParentalNodePaths()[0]);
+
+        if (lightMgr)
+        {
+            lightMgr->registerPbrLight(lightSource->getLight(0));
+        }
     }
 
     osg::ref_ptr<LightSource> createLightSource(const ESM::Light* esmLight, unsigned int lightMask, bool isExterior, const osg::Vec4f& ambient)

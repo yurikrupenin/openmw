@@ -1,5 +1,7 @@
 #include "shadervisitor.hpp"
 
+#include <algorithm>
+
 #include <osg/Texture>
 #include <osg/Material>
 #include <osg/Geometry>
@@ -11,13 +13,122 @@
 #include <components/debug/debuglog.hpp>
 #include <components/resource/imagemanager.hpp>
 #include <components/vfs/manager.hpp>
+#include <components/sceneutil/lightmanager.hpp>
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/morphgeometry.hpp>
+#include <components/sceneutil/visitor.hpp>
 
 #include "shadermanager.hpp"
 
 namespace Shader
 {
+    class LightCache
+    {
+    public:
+        LightCache(SceneUtil::LightManager &lightMgr) :
+            mLightMgr(lightMgr)
+            , mTraversalNo(0)
+        {}
+
+        ~LightCache() {}
+
+        // TODO: fooled you! no actual caching!
+        std::vector<osg::Light*> getLightsList(const unsigned int &traversal)
+        {    
+                ++mTraversalNo;
+                return mLightMgr.getPbrLightsList();
+        }
+
+    private:
+        SceneUtil::LightManager &mLightMgr;
+        unsigned int mTraversalNo;
+        std::vector<SceneUtil::LightManager::LightSourceTransform> mActiveLights;
+    };
+
+    class PbrLightPositionCallback : public osg::Uniform::Callback
+    {
+        LightCache *mCache;
+        unsigned int mLightNo;
+        std::vector<osg::Node*> mFoundNodes;
+    public:
+
+        PbrLightPositionCallback(LightCache *cache, unsigned int lightNo) :
+            mCache(cache)
+            , mLightNo(lightNo)
+        {
+        }
+
+        virtual void operator()(osg::Uniform* uniform,
+            osg::NodeVisitor* nv)
+        {
+            auto lights = mCache->getLightsList(nv->getTraversalNumber());
+
+            // TODO: Unhardcode light limit
+            if (lights.size() > mLightNo && mLightNo < 64)
+            {
+                auto light = lights.at(mLightNo);
+
+                if (light)
+                {
+                        osg::Vec4 posVec4 = light->getPosition();
+                        uniform->set(osg::Vec3(posVec4.x(), posVec4.y(), posVec4.z()));
+                }
+                else
+                {
+                    uniform->set(osg::Vec3(0.0f, 0.0f, 0.0f));
+                }
+            }
+            else
+            {
+                uniform->set(osg::Vec3(0.0f, 0.0f, 0.0f));
+            }
+        }
+
+    };
+
+    class PbrLightColorCallback : public osg::Uniform::Callback
+    {
+        LightCache *mCache;
+        unsigned int mLightNo;
+        std::vector<osg::Node*> mFoundNodes;
+
+    public:
+
+        PbrLightColorCallback(LightCache *cache, unsigned int lightNo) :
+            mCache(cache)
+            , mLightNo(lightNo)
+        {
+        }
+
+        virtual void operator()(osg::Uniform* uniform,
+            osg::NodeVisitor* nv)
+        {
+            auto lights = mCache->getLightsList(nv->getTraversalNumber());
+
+
+            // TODO: Unhardcode light limit
+            if (lights.size() > mLightNo && mLightNo < 64)
+            {
+                auto light = lights.at(mLightNo);
+
+                if (light)
+                {
+                    osg::Vec4 colVec4 = light->getDiffuse();
+                    uniform->set(osg::Vec3(colVec4.r() * 30000.0f, colVec4.g() * 30000.0f, colVec4.b() * 30000.0f));
+                }
+                else
+                {
+                    uniform->set(osg::Vec3(0.0f, 0.0f, 0.0f));
+                }
+            }
+            else
+            {
+                uniform->set(osg::Vec3(0.0f, 0.0f, 0.0f));
+            }
+    
+        }
+
+    };
 
     ShaderVisitor::ShaderRequirements::ShaderRequirements()
         : mShaderRequired(false)
@@ -34,7 +145,7 @@ namespace Shader
 
     }
 
-    ShaderVisitor::ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, const std::string &defaultVsTemplate, const std::string &defaultFsTemplate)
+    ShaderVisitor::ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, SceneUtil::LightManager& lightMgr, const std::string &defaultVsTemplate, const std::string &defaultFsTemplate, const UniformList &uniformList)
         : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
         , mForceShaders(false)
         , mAllowedToModifyStateSets(true)
@@ -42,8 +153,11 @@ namespace Shader
         , mAutoUseSpecularMaps(false)
         , mShaderManager(shaderManager)
         , mImageManager(imageManager)
+        , mLightMgr(lightMgr)
+        , mLightCache(new LightCache(mLightMgr))
         , mDefaultVsTemplate(defaultVsTemplate)
         , mDefaultFsTemplate(defaultFsTemplate)
+        , mUniformList(uniformList)
     {
         mRequirements.push_back(ShaderRequirements());
     }
@@ -76,7 +190,7 @@ namespace Shader
         return newStateSet.get();
     }
 
-    const char* defaultTextures[] = { "diffuseMap", "normalMap", "emissiveMap", "darkMap", "detailMap", "envMap", "specularMap", "decalMap" };
+    const char* defaultTextures[] = { "diffuseMap", "normalMap", "emissiveMap", "darkMap", "detailMap", "envMap", "specularMap", "decalMap", "roughnessMap" };
     bool isTextureNameRecognized(const std::string& name)
     {
         for (unsigned int i=0; i<sizeof(defaultTextures)/sizeof(defaultTextures[0]); ++i)
@@ -91,10 +205,12 @@ namespace Shader
         if (mAllowedToModifyStateSets)
             writableStateSet = node.getStateSet();
         const osg::StateSet::TextureAttributeList& texAttributes = stateset->getTextureAttributeList();
+
         if (!texAttributes.empty())
         {
             const osg::Texture* diffuseMap = nullptr;
             const osg::Texture* normalMap = nullptr;
+            const osg::Texture* roughnessMap = nullptr;
             const osg::Texture* specularMap = nullptr;
             for(unsigned int unit=0;unit<texAttributes.size();++unit)
             {
@@ -131,6 +247,8 @@ namespace Shader
                                 diffuseMap = texture;
                             else if (texName == "specularMap")
                                 specularMap = texture;
+                            else if (texName == "roughnessMap")
+                                roughnessMap = texture;
                         }
                         else
                             Log(Debug::Error) << "ShaderVisitor encountered unknown texture " << texture;
@@ -205,6 +323,34 @@ namespace Shader
                     mRequirements.back().mShaderRequired = true;
                 }
             }
+            // TODO: only enable if option is set
+            if (diffuseMap != nullptr && roughnessMap == nullptr && diffuseMap->getImage(0))
+            {
+                std::string roughnessMapName = diffuseMap->getImage(0)->getFileName();
+
+                // TODO: make name pattern configurable
+                boost::replace_last(roughnessMapName, ".", std::string("_roughness") + ".");
+
+                if (mImageManager.getVFS()->exists(roughnessMapName))
+                {
+                    osg::ref_ptr<osg::Image> image(mImageManager.getImage(roughnessMapName));
+                    osg::ref_ptr<osg::Texture2D> roughnessMapTex(new osg::Texture2D(image));
+                    roughnessMapTex->setTextureSize(image->s(), image->t());
+                    roughnessMapTex->setWrap(osg::Texture::WRAP_S, diffuseMap->getWrap(osg::Texture::WRAP_S));
+                    roughnessMapTex->setWrap(osg::Texture::WRAP_T, diffuseMap->getWrap(osg::Texture::WRAP_T));
+                    roughnessMapTex->setFilter(osg::Texture::MIN_FILTER, diffuseMap->getFilter(osg::Texture::MIN_FILTER));
+                    roughnessMapTex->setFilter(osg::Texture::MAG_FILTER, diffuseMap->getFilter(osg::Texture::MAG_FILTER));
+                    roughnessMapTex->setMaxAnisotropy(diffuseMap->getMaxAnisotropy());
+                    roughnessMapTex->setName("roughnessMap");
+
+                    int unit = texAttributes.size();
+                    if (!writableStateSet)
+                        writableStateSet = getWritableStateSet(node);
+                    writableStateSet->setTextureAttributeAndModes(unit, roughnessMapTex, osg::StateAttribute::ON);
+                    mRequirements.back().mTextures[unit] = "roughnessMap";
+                    mRequirements.back().mShaderRequired = true;
+                }
+            }
 
             if (diffuseMap)
             {
@@ -250,6 +396,38 @@ namespace Shader
                     mRequirements.back().mColorMode = colorMode;
                 }
             }
+        }
+
+        if (!writableStateSet)
+            writableStateSet = getWritableStateSet(node);
+
+
+        unsigned int lightCount = 0;
+
+        // TODO: unhardcode light limit
+        for (lightCount; lightCount < 64; ++lightCount)
+        {
+            std::string lightPositionUniformName = "pointLights[" + std::to_string(lightCount) + "].position";
+            osg::ref_ptr<osg::Uniform> lightPosition = new osg::Uniform(lightPositionUniformName.c_str(), osg::Vec3(0.0f, 0.0f, 0.0f));
+
+            lightPosition->setUpdateCallback(new PbrLightPositionCallback(mLightCache, lightCount));
+
+            writableStateSet->addUniform(lightPosition);
+
+
+            std::string lightColorUniformName = "pointLights[" + std::to_string(lightCount) + "].color";
+
+            osg::ref_ptr<osg::Uniform> lightColor = new osg::Uniform(lightColorUniformName.c_str(), osg::Vec3(0.0f, 0.0f, 0.0f));
+
+            lightColor->setUpdateCallback(new PbrLightColorCallback(mLightCache, lightCount));
+
+
+            writableStateSet->addUniform(lightColor);
+        }
+
+        for (auto it = mUniformList.begin(); it != mUniformList.end(); ++it)
+        {
+            writableStateSet->addUniform(*it);
         }
     }
 

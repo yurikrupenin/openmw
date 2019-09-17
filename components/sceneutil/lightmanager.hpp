@@ -16,6 +16,9 @@ namespace osgUtil
 
 namespace SceneUtil
 {
+    class LightManager;
+
+    LightManager* findLightManager(const osg::NodePath& path);
 
     /// LightSource managed by a LightManager.
     /// @par Typically used for point lights. Spot lights are not supported yet. Directional lights affect the whole scene
@@ -103,6 +106,10 @@ namespace SceneUtil
 
         int getStartLight() const;
 
+        void registerPbrLight(osg::Light *light);
+
+        std::vector<osg::Light*> getPbrLightsList();
+
         /// Internal use only, called automatically by the LightManager's UpdateCallback
         void update();
 
@@ -141,6 +148,8 @@ namespace SceneUtil
         LightStateSetMap mStateSetCache[2];
 
         std::vector<osg::ref_ptr<osg::StateAttribute>> mDummies;
+
+        std::vector<osg::Light*> mPbrLights;
 
         int mStartLight;
 
