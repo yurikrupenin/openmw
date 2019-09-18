@@ -10,8 +10,6 @@ uniform sampler2D normalMap;
 uniform sampler2D specularMap;
 uniform sampler2D roughnessMap;
 
-uniform float ao;
-
 
 
 struct PointLight {
@@ -24,11 +22,45 @@ uniform PointLight pointLights[NR_POINT_LIGHTS];
 uniform vec3 camPos;
 
 const float PI = 3.14159265359;
-const float normalScale = 3.0;
+const float normalScale = 1.0;
 const float ambientLight = 0.02;
-const float roughnessMultiplier = 0.65;
-const float attentuationRate = 0.8;
-// ----------------------------------------------------------------------------
+const float roughnessMultiplier = 1.0;
+const float attenuationRate = 2.0;
+float glossMultiplier = 1.0;
+
+
+
+float maxvec(vec3 v)
+{
+    return max(max(v.x, v.y), v.z);
+}
+
+vec3 lerp(vec3 x, vec3 y, vec3 s)
+{
+  return x + s * (y - x);
+}
+
+vec3 lerp(vec3 x, vec3 y, float s)
+{
+  return x + s * (y - x);
+}
+
+float lerp(float x, float y, float s)
+{
+  return x + s * (y - x);
+}
+
+
+float adjustRoughness(float roughness, vec3 normal ) {
+    float normalLen = length(normal*2.0-1.0);
+    if ( normalLen < 1.0) {
+        float normalLen2 = normalLen * normalLen;
+        float kappa = ( 3.0 * normalLen -  normalLen2 * normalLen )/( 1.0 - normalLen2 );
+        return min(1.0, sqrt( roughness * roughness + 0.5/kappa ));
+    }
+    return roughness;
+}
+
 
 vec3 getNormalFromMap()
 {
@@ -48,53 +80,42 @@ vec3 getNormalFromMap()
 }
 
 
-vec3
-calcDiffuse(vec3 diffuseColor)
+vec3 calcDiffuse(vec3 diffuseColor)
 {
   return diffuseColor / PI;
 }
 
 
-float DistributionGGX(vec3 N, vec3 H, float roughness)
+float microfacetDist(float NdH, float roughness)
 {
-    float a = roughness*roughness;
-    float a2 = a*a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH*NdotH;
+    float a, aa, f;
+    a = roughness * roughness;
+    aa = a * a;
 
-    float nom   = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
+    f = NdH * NdH * (aa - 1.0) + 1.0;
 
-    return nom / max(denom, 0.001); // prevent divide by zero for roughness=0.0 and NdotH=1.0
+    return aa / max((PI * f * f), 0.0001); // prevent divide by zero
 }
-// ----------------------------------------------------------------------------
-float GeometrySchlickGGX(float NdotV, float roughness)
+
+
+float geomOcclusion(float NdL, float NdV, float roughness)
 {
-    float r = (roughness + 1.0);
-    float k = (r*r) / 8.0;
+  float k, Gv, Gl;
 
-    float nom   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
+  k  = pow(roughness + 1.0, 2.0) / 8.0;
+  Gv = NdV / lerp(k, 1.0, NdV);
+  Gl = NdL / lerp(k, 1.0, NdL);
 
-    return nom / denom;
+  return Gv * Gl;
 }
-// ----------------------------------------------------------------------------
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
 
-    return ggx1 * ggx2;
-}
-// ----------------------------------------------------------------------------
+
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
-// ----------------------------------------------------------------------------
+
+
 void main()
 {	
     vec3 N = getNormalFromMap();
@@ -102,21 +123,19 @@ void main()
 
     float roughness = texture(roughnessMap, TexCoords).r * roughnessMultiplier;
 
-    vec3 specular = pow(texture(specularMap, TexCoords).rgb, vec3(2.2)) * 2;
-    clamp(specular, 0.0, 1.0);
+    roughness = adjustRoughness(roughness, texture(normalMap, TexCoords).xyz);
 
-    roughness = max(0.0, roughness);
+    vec3 specular = pow(texture(specularMap, TexCoords).rgb, vec3(2.2)) * glossMultiplier;
 
     vec4 diffuse = texture(diffuseMap, TexCoords).rgba;
 
     vec3 albedo = pow(diffuse.rgb, vec3(2.2));
 
-    vec3 Cdiff = albedo.rgb * (1.0 - specular);
-
-    vec3 F0 = specular;
+    vec3 Cdiff = albedo * (1.0 - clamp(maxvec(specular), 0.0, 1.0));
 
     // reflectance equation
     vec3 Lo = vec3(0.0);
+
     for(int i = 0; i < NR_POINT_LIGHTS; ++i) 
     {
         // HACK: skip insignificant lights [1]
@@ -126,29 +145,33 @@ void main()
         // calculate per-light radiance
         vec3 L = normalize(pointLights[i].position - WorldPos);
         vec3 H = normalize(V + L);
+
+        float NdV   =  clamp(dot(N, V), 0.001, 1.0);
+        float NdL   =  clamp(dot(N, L), 0.001, 1.0);
+        float NdH   =  clamp(dot(N, H), 0.0,   1.0);
+        float LdH   =  clamp(dot(L, H), 0.0,   1.0);
+        float VdH   =  clamp(dot(V, H), 0.0,   1.0);
+
         float distance = length(pointLights[i].position - WorldPos);
-        float attenuation = attentuationRate / (distance * distance);
+        float attenuation = attenuationRate / (distance * distance);
         vec3 radiance = (pointLights[i].color) * attenuation;
 
         // HACK: skip insignificant lights [2]
         if (radiance.r < 0.01 && radiance.g < 0.01 && radiance.b < 0.01)
             continue;
+  
+        float D = microfacetDist(NdH, roughness);    
+        float G = geomOcclusion(NdL, NdV, roughness);
 
-        // Cook-Torrance BRDF
-        float NDF = DistributionGGX(N, H, roughness);   
-        float G   = GeometrySmith(N, V, L, roughness);      
-        vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
+        vec3 F    = fresnelSchlick(VdH, specular);
            
-        vec3 nominator    = NDF * G * F;
-        float denominator = 4 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
-        vec3 Fspec = nominator / max(denominator, 0.001); // prevent divide by zero for NdotV=0.0 or NdotL=0.0
+        vec3 nominator    = F * G * D;
+        float denominator = 4.0 * NdL * NdV;
+        vec3 Fspec = nominator / denominator;
         vec3 Fdiff = (1.0 - F) * calcDiffuse(Cdiff);
 
-        // scale light by NdotL
-        float NdotL = max(dot(N, L), 0.0);        
-
         // add to outgoing radiance Lo
-        Lo += radiance * NdotL * (Fdiff + Fspec);
+        Lo += radiance * NdL * (Fdiff + Fspec);
     }   
     
     // ambient lighting calculation
@@ -162,6 +185,8 @@ void main()
     
     // gamma correct
     color = pow(color, vec3(1.0/2.2)); 
+
+    clamp(color, 0.0, 1.0);
 
     FragColor = vec4(color, diffuse.a);
 
