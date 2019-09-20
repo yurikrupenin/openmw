@@ -25,6 +25,7 @@
 #include <components/vfs/manager.hpp>
 
 #include <components/sceneutil/clone.hpp>
+#include <components/sceneutil/lightutil.hpp>
 #include <components/sceneutil/util.hpp>
 #include <components/sceneutil/controller.hpp>
 #include <components/sceneutil/optimizer.hpp>
@@ -227,6 +228,7 @@ namespace Resource
         , mSharedStateManager(new SharedStateManager)
         , mImageManager(imageManager)
         , mLightMgr(nullptr)
+        , mLightCache(nullptr)
         , mNifFileManager(nifFileManager)
         , mMinFilter(osg::Texture::LINEAR_MIPMAP_LINEAR)
         , mMagFilter(osg::Texture::LINEAR)
@@ -254,6 +256,7 @@ namespace Resource
     void SceneManager::setLightManager(SceneUtil::LightManager *mgr)
     {
         mLightMgr = mgr;
+        mLightCache = new SceneUtil::LightCache(*mLightMgr);
     }
 
     void SceneManager::recreateShaders(osg::ref_ptr<osg::Node> node)
@@ -760,7 +763,7 @@ namespace Resource
     Shader::ShaderVisitor *SceneManager::createShaderVisitor()
     {
         // TODO: make shading pipeline configurable at runtime
-        Shader::ShaderVisitor* shaderVisitor = new Shader::ShaderVisitor(*mShaderManager.get(), *mImageManager, *mLightMgr, "pbr_vertex.glsl", "pbr_fragment.glsl", mShaderUniforms);
+        Shader::ShaderVisitor* shaderVisitor = new Shader::ShaderVisitor(*mShaderManager.get(), *mImageManager, *mLightMgr, *mLightCache, "pbr_vertex.glsl", "pbr_fragment.glsl", mShaderUniforms);
         shaderVisitor->setForceShaders(mForceShaders);
         shaderVisitor->setAutoUseNormalMaps(mAutoUseNormalMaps);
         shaderVisitor->setNormalMapPattern(mNormalMapPattern);

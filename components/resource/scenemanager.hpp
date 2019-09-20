@@ -171,6 +171,7 @@ namespace Resource
         Resource::ImageManager* mImageManager;
         Resource::NifFileManager* mNifFileManager;
         SceneUtil::LightManager* mLightMgr;
+        SceneUtil::LightCache* mLightCache;
 
         osg::Texture::FilterMode mMinFilter;
         osg::Texture::FilterMode mMagFilter;

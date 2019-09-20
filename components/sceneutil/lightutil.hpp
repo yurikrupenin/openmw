@@ -1,8 +1,13 @@
 #ifndef OPENMW_COMPONENTS_LIGHTUTIL_H
 #define OPENMW_COMPONENTS_LIGHTUTIL_H
 
+#include <iostream>
+#include <vector>
+
 #include <osg/ref_ptr>
 #include <osg/Vec4f>
+
+#include <components/sceneutil/lightmanager.hpp>
 
 namespace osg
 {
@@ -18,6 +23,21 @@ namespace ESM
 namespace SceneUtil
 {
     class LightSource;
+
+    class LightCache
+    {
+    public:
+        LightCache(SceneUtil::LightManager &lightMgr);
+        ~LightCache();
+
+        std::vector<SceneUtil::LightManager::LightSourceTransform> getLightsList(const unsigned int &traversal);
+
+    private:
+        SceneUtil::LightManager &mLightMgr;
+        unsigned int mTraversalNo;
+        std::vector<SceneUtil::LightManager::LightSourceTransform> mActiveLights;
+        std::vector<SceneUtil::LightManager::LightSourceTransform> mCachedLights;
+    };
 
     /// @brief Set up global attenuation settings for an osg::Light.
     /// @param radius The radius of the light source.

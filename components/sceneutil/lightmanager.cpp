@@ -1,6 +1,7 @@
 #include "lightmanager.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 #include <osgUtil/CullVisitor>
 
@@ -132,6 +133,7 @@ namespace SceneUtil
             }
 
             mLightManager->addLight(static_cast<LightSource*>(node), osg::computeLocalToWorld(nv->getNodePath()), nv->getTraversalNumber());
+
 
             traverse(node, nv);
         }
@@ -353,28 +355,6 @@ namespace SceneUtil
     int LightManager::getStartLight() const
     {
         return mStartLight;
-    }
-
-    void LightManager::registerPbrLight(osg::Light *light)
-    {
-        mPbrLights.push_back(light);
-    }
-
-    std::vector<osg::Light*> LightManager::getPbrLightsList()
-    {
-        static unsigned int lastReturnedSize = mPbrLights.size();
-
-        // perform cleanup once in a while
-        // TODO: totally doesn't work, invalid lights are not set to nullptr
-        if (mPbrLights.size() - lastReturnedSize > 100)
-        {   
-            mPbrLights.erase(std::remove(std::begin(mPbrLights), std::end(mPbrLights), nullptr), std::end(mPbrLights));
-
-            lastReturnedSize = mPbrLights.size();
-        }
-
-
-        return mPbrLights;
     }
 
     static int sLightId = 0;

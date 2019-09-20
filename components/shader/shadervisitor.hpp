@@ -2,6 +2,7 @@
 #define OPENMW_COMPONENTS_SHADERVISITOR_H
 
 #include <components/sceneutil/lightmanager.hpp>
+#include <components/sceneutil/lightutil.hpp>
 
 #include <osg/NodeVisitor>
 
@@ -12,8 +13,6 @@ namespace Resource
 
 namespace Shader
 {
-    class LightCache;
-
     class ShaderManager;
 
     /// @brief Adjusts the given subgraph to render using shaders.
@@ -23,7 +22,8 @@ namespace Shader
         typedef std::list< osg::ref_ptr<osg::Uniform> > UniformList;
 
     public:
-        ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, SceneUtil::LightManager& lightMgr, const std::string& defaultVsTemplate, const std::string& defaultFsTemplate, const UniformList& uniformList);
+        ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, SceneUtil::LightManager& lightMgr, SceneUtil::LightCache& lightCache,
+            const std::string& defaultVsTemplate, const std::string& defaultFsTemplate, const UniformList& uniformList);
 
         /// By default, only bump mapped objects will have a shader added to them.
         /// Setting force = true will cause all objects to render using shaders, regardless of having a bump map.
@@ -68,9 +68,7 @@ namespace Shader
         ShaderManager& mShaderManager;
         Resource::ImageManager& mImageManager;
         SceneUtil::LightManager& mLightMgr;
-
-
-        LightCache *mLightCache;
+        SceneUtil::LightCache& mLightCache;
 
         UniformList mUniformList;
 

@@ -1,6 +1,7 @@
 #include "shadervisitor.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 #include <osg/Texture>
 #include <osg/Material>
@@ -14,6 +15,7 @@
 #include <components/resource/imagemanager.hpp>
 #include <components/vfs/manager.hpp>
 #include <components/sceneutil/lightmanager.hpp>
+#include <components/sceneutil/lightutil.hpp>
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/morphgeometry.hpp>
 #include <components/sceneutil/visitor.hpp>
@@ -22,37 +24,15 @@
 
 namespace Shader
 {
-    class LightCache
-    {
-    public:
-        LightCache(SceneUtil::LightManager &lightMgr) :
-            mLightMgr(lightMgr)
-            , mTraversalNo(0)
-        {}
-
-        ~LightCache() {}
-
-        // TODO: fooled you! no actual caching!
-        std::vector<osg::Light*> getLightsList(const unsigned int &traversal)
-        {    
-                ++mTraversalNo;
-                return mLightMgr.getPbrLightsList();
-        }
-
-    private:
-        SceneUtil::LightManager &mLightMgr;
-        unsigned int mTraversalNo;
-        std::vector<SceneUtil::LightManager::LightSourceTransform> mActiveLights;
-    };
 
     class PbrLightPositionCallback : public osg::Uniform::Callback
     {
-        LightCache *mCache;
+        SceneUtil::LightCache *mCache;
         unsigned int mLightNo;
         std::vector<osg::Node*> mFoundNodes;
     public:
 
-        PbrLightPositionCallback(LightCache *cache, unsigned int lightNo) :
+        PbrLightPositionCallback(SceneUtil::LightCache *cache, unsigned int lightNo) :
             mCache(cache)
             , mLightNo(lightNo)
         {
@@ -66,7 +46,7 @@ namespace Shader
             // TODO: Unhardcode light limit
             if (lights.size() > mLightNo && mLightNo < 64)
             {
-                auto light = lights.at(mLightNo);
+                auto light = lights.at(mLightNo).mLightSource->getLight(0);
 
                 if (light)
                 {
@@ -88,13 +68,13 @@ namespace Shader
 
     class PbrLightColorCallback : public osg::Uniform::Callback
     {
-        LightCache *mCache;
+        SceneUtil::LightCache *mCache;
         unsigned int mLightNo;
         std::vector<osg::Node*> mFoundNodes;
 
     public:
 
-        PbrLightColorCallback(LightCache *cache, unsigned int lightNo) :
+        PbrLightColorCallback(SceneUtil::LightCache *cache, unsigned int lightNo) :
             mCache(cache)
             , mLightNo(lightNo)
         {
@@ -109,7 +89,7 @@ namespace Shader
             // TODO: Unhardcode light limit
             if (lights.size() > mLightNo && mLightNo < 64)
             {
-                auto light = lights.at(mLightNo);
+                auto light = lights.at(mLightNo).mLightSource->getLight(0);
 
                 if (light)
                 {
@@ -145,7 +125,8 @@ namespace Shader
 
     }
 
-    ShaderVisitor::ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, SceneUtil::LightManager& lightMgr, const std::string &defaultVsTemplate, const std::string &defaultFsTemplate, const UniformList &uniformList)
+    ShaderVisitor::ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, SceneUtil::LightManager& lightMgr, SceneUtil::LightCache& lightCache,
+        const std::string &defaultVsTemplate, const std::string &defaultFsTemplate, const UniformList &uniformList)
         : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
         , mForceShaders(false)
         , mAllowedToModifyStateSets(true)
@@ -154,7 +135,7 @@ namespace Shader
         , mShaderManager(shaderManager)
         , mImageManager(imageManager)
         , mLightMgr(lightMgr)
-        , mLightCache(new LightCache(mLightMgr))
+        , mLightCache(lightCache)
         , mDefaultVsTemplate(defaultVsTemplate)
         , mDefaultFsTemplate(defaultFsTemplate)
         , mUniformList(uniformList)
@@ -402,15 +383,13 @@ namespace Shader
             writableStateSet = getWritableStateSet(node);
 
 
-        unsigned int lightCount = 0;
-
         // TODO: unhardcode light limit
-        for (lightCount; lightCount < 64; ++lightCount)
+        for (unsigned int lightCount = 0; lightCount < 64; ++lightCount)
         {
             std::string lightPositionUniformName = "pointLights[" + std::to_string(lightCount) + "].position";
             osg::ref_ptr<osg::Uniform> lightPosition = new osg::Uniform(lightPositionUniformName.c_str(), osg::Vec3(0.0f, 0.0f, 0.0f));
 
-            lightPosition->setUpdateCallback(new PbrLightPositionCallback(mLightCache, lightCount));
+            lightPosition->setUpdateCallback(new PbrLightPositionCallback(&mLightCache, lightCount));
 
             writableStateSet->addUniform(lightPosition);
 
@@ -419,7 +398,7 @@ namespace Shader
 
             osg::ref_ptr<osg::Uniform> lightColor = new osg::Uniform(lightColorUniformName.c_str(), osg::Vec3(0.0f, 0.0f, 0.0f));
 
-            lightColor->setUpdateCallback(new PbrLightColorCallback(mLightCache, lightCount));
+            lightColor->setUpdateCallback(new PbrLightColorCallback(&mLightCache, lightCount));
 
 
             writableStateSet->addUniform(lightColor);

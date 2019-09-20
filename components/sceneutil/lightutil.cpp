@@ -15,6 +15,28 @@
 
 namespace SceneUtil
 {
+    LightCache::LightCache(SceneUtil::LightManager &lightMgr) :
+        mLightMgr(lightMgr)
+        , mTraversalNo(0)
+    {}
+
+    LightCache::~LightCache() {}
+
+    // TODO: ok, so we managed too keep lighting consistant, but it's painfully slow
+    //       and also always one frame late now. Gotta find another way to gather all
+    //       active lights during PBR rendering.
+    std::vector<SceneUtil::LightManager::LightSourceTransform> LightCache::getLightsList(const unsigned int &traversal)
+    {
+        if (traversal != mTraversalNo)
+        {
+            mTraversalNo = traversal;
+            mActiveLights = mCachedLights;
+        }
+
+        mCachedLights = mLightMgr.getLights();
+
+        return mActiveLights;
+    }
 
     void configureLight(osg::Light *light, float radius, bool isExterior)
     {
@@ -87,13 +109,6 @@ namespace SceneUtil
 
         osg::ref_ptr<LightSource> lightSource = createLightSource(esmLight, lightMask, isExterior);
         attachTo->addChild(lightSource);
-
-        auto lightMgr = SceneUtil::findLightManager(node->getParentalNodePaths()[0]);
-
-        if (lightMgr)
-        {
-            lightMgr->registerPbrLight(lightSource->getLight(0));
-        }
     }
 
     osg::ref_ptr<LightSource> createLightSource(const ESM::Light* esmLight, unsigned int lightMask, bool isExterior, const osg::Vec4f& ambient)
