@@ -44,9 +44,9 @@ namespace Shader
             auto lights = mCache->getLightsList(nv->getTraversalNumber());
 
             // TODO: Unhardcode light limit
-            if (lights.size() > mLightNo && mLightNo < 64)
+            if (lights->size() > mLightNo && mLightNo < 64)
             {
-                auto light = lights.at(mLightNo).mLightSource->getLight(0);
+                auto light = lights->at(mLightNo).mLightSource->getLight(0);
 
                 if (light)
                 {
@@ -87,9 +87,9 @@ namespace Shader
 
 
             // TODO: Unhardcode light limit
-            if (lights.size() > mLightNo && mLightNo < 64)
+            if (lights->size() > mLightNo && mLightNo < 64)
             {
-                auto light = lights.at(mLightNo).mLightSource->getLight(0);
+                auto light = lights->at(mLightNo).mLightSource->getLight(0);
 
                 if (light)
                 {

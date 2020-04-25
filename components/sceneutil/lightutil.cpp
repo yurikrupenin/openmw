@@ -25,7 +25,7 @@ namespace SceneUtil
     // TODO: ok, so we managed too keep lighting consistant, but it's painfully slow
     //       and also always one frame late now. Gotta find another way to gather all
     //       active lights during PBR rendering.
-    std::vector<SceneUtil::LightManager::LightSourceTransform> LightCache::getLightsList(const unsigned int &traversal)
+    std::vector<SceneUtil::LightManager::LightSourceTransform> *LightCache::getLightsList(const unsigned int &traversal)
     {
         if (traversal != mTraversalNo)
         {
@@ -35,7 +35,7 @@ namespace SceneUtil
 
         mCachedLights = mLightMgr.getLights();
 
-        return mActiveLights;
+        return &mActiveLights;
     }
 
     void configureLight(osg::Light *light, float radius, bool isExterior)

@@ -56,17 +56,21 @@
 #include "../mwbase/environment.hpp"
 #include "../mwbase/windowmanager.hpp"
 
-#include "sky.hpp"
-#include "effectmanager.hpp"
-#include "npcanimation.hpp"
-#include "vismask.hpp"
-#include "pathgrid.hpp"
+#include "actorspaths.hpp"
 #include "camera.hpp"
-#include "water.hpp"
+#include "deferredrenderer.hpp"
+#include "effectmanager.hpp"
+#include "navmesh.hpp"
+#include "npcanimation.hpp"
+#include "pathgrid.hpp"
+#include "sky.hpp"
 #include "terrainstorage.hpp"
 #include "util.hpp"
-#include "navmesh.hpp"
-#include "actorspaths.hpp"
+#include "vismask.hpp"
+#include "water.hpp"
+
+
+
 
 namespace
 {
@@ -231,9 +235,15 @@ namespace MWRender
 
         mResourceSystem->getSceneManager()->setLightManager(sceneRoot);
 
+        
+
         sceneRoot->setLightingMask(Mask_Lighting);
         mSceneRoot = sceneRoot;
         sceneRoot->setStartLight(1);
+
+
+       
+        
 
         int shadowCastingTraversalMask = Mask_Scene;
         if (Settings::Manager::getBool("actor shadows", "Shadows"))
@@ -382,6 +392,37 @@ namespace MWRender
 
         mRootNode->getOrCreateStateSet()->addUniform(new osg::Uniform("near", mNearClip));
         mRootNode->getOrCreateStateSet()->addUniform(new osg::Uniform("far", mViewDistance));
+
+        DeferredPipeline p = createDeferredPipeline(mRootNode);
+
+        // Quads to display 1 pass textures.
+        osg::ref_ptr<osg::Camera> qTexN =
+            createTextureDisplayQuad(osg::Vec3(0, 0.7, 0),
+                p.pass2Normals,
+                p.textureSize);
+        osg::ref_ptr<osg::Camera> qTexP =
+            createTextureDisplayQuad(osg::Vec3(0, 0.35, 0),
+                p.pass2Positions,
+                p.textureSize);
+        osg::ref_ptr<osg::Camera> qTexC =
+            createTextureDisplayQuad(osg::Vec3(0, 0, 0),
+                p.pass2Colors,
+                p.textureSize);
+        // Quad to display 3 pass final (screen) texture.
+        osg::ref_ptr<osg::Camera> qTexFinal =
+            createTextureDisplayQuad(osg::Vec3(0, 0, 0),
+                p.pass2Colors, // pass3Final
+                p.textureSize,
+                1,
+                1);
+        
+        p.graph->addChild(qTexFinal.get());
+        p.graph->addChild(qTexN.get());
+        p.graph->addChild(qTexP.get());
+        p.graph->addChild(qTexC.get());
+
+        mViewer->getCamera()->setComputeNearFarMode(osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR);
+        mViewer->setSceneData(p.graph);
 
         mUniformNear = mRootNode->getOrCreateStateSet()->getUniform("near");
         mUniformFar = mRootNode->getOrCreateStateSet()->getUniform("far");

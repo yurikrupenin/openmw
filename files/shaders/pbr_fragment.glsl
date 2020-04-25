@@ -16,7 +16,7 @@ struct PointLight {
     vec3 position;
     vec3 color;
 };
-#define NR_POINT_LIGHTS 64
+#define NR_POINT_LIGHTS 32
 uniform PointLight pointLights[NR_POINT_LIGHTS];
 
 uniform vec3 camPos;
@@ -25,7 +25,7 @@ const float PI = 3.14159265359;
 const float normalScale = 1.0;
 const float ambientLight = 0.02;
 const float roughnessMultiplier = 1.0;
-const float attenuationRate = 2.0;
+const float attenuationRate = 1.0;
 float glossMultiplier = 1.0;
 
 
@@ -131,17 +131,13 @@ void main()
 
     vec3 albedo = pow(diffuse.rgb, vec3(2.2));
 
-    vec3 Cdiff = albedo * (1.0 - clamp(maxvec(specular), 0.0, 1.0));
+    vec3 Cdiff = albedo * (1.0 - clamp(specular, vec3(0.0), vec3(1.0)));
 
     // reflectance equation
     vec3 Lo = vec3(0.0);
 
     for(int i = 0; i < NR_POINT_LIGHTS; ++i) 
     {
-        // HACK: skip insignificant lights [1]
-        if (pointLights[i].color.r < 0.1 && pointLights[i].color.g < 0.1 && pointLights[i].color.b < 0.1)
-            continue;
-
         // calculate per-light radiance
         vec3 L = normalize(pointLights[i].position - WorldPos);
         vec3 H = normalize(V + L);
@@ -156,9 +152,6 @@ void main()
         float attenuation = attenuationRate / (distance * distance);
         vec3 radiance = (pointLights[i].color) * attenuation;
 
-        // HACK: skip insignificant lights [2]
-        if (radiance.r < 0.01 && radiance.g < 0.01 && radiance.b < 0.01)
-            continue;
   
         float D = microfacetDist(NdH, roughness);    
         float G = geomOcclusion(NdL, NdV, roughness);

@@ -30,7 +30,7 @@ namespace SceneUtil
         LightCache(SceneUtil::LightManager &lightMgr);
         ~LightCache();
 
-        std::vector<SceneUtil::LightManager::LightSourceTransform> getLightsList(const unsigned int &traversal);
+        std::vector<SceneUtil::LightManager::LightSourceTransform> *getLightsList(const unsigned int &traversal);
 
     private:
         SceneUtil::LightManager &mLightMgr;
