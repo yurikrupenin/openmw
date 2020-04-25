@@ -3,15 +3,16 @@
 #include <algorithm>
 #include <iostream>
 
+#include <boost/algorithm/string/replace.hpp>
+
 #include <osg/Texture>
 #include <osg/Material>
 #include <osg/Geometry>
 
 #include <osgUtil/TangentSpaceGenerator>
 
-#include <boost/algorithm/string.hpp>
-
 #include <components/debug/debuglog.hpp>
+#include <components/misc/stringops.hpp>
 #include <components/resource/imagemanager.hpp>
 #include <components/vfs/manager.hpp>
 #include <components/sceneutil/lightmanager.hpp>
@@ -19,6 +20,7 @@
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/morphgeometry.hpp>
 #include <components/sceneutil/visitor.hpp>
+#include <components/settings/settings.hpp>
 
 #include "shadermanager.hpp"
 
@@ -171,7 +173,7 @@ namespace Shader
         return newStateSet.get();
     }
 
-    const char* defaultTextures[] = { "diffuseMap", "normalMap", "emissiveMap", "darkMap", "detailMap", "envMap", "specularMap", "decalMap", "roughnessMap" };
+    const char* defaultTextures[] = { "diffuseMap", "normalMap", "emissiveMap", "darkMap", "detailMap", "envMap", "specularMap", "decalMap", "roughnessMap", "bumpMap" };
     bool isTextureNameRecognized(const std::string& name)
     {
         for (unsigned int i=0; i<sizeof(defaultTextures)/sizeof(defaultTextures[0]); ++i)
@@ -193,6 +195,7 @@ namespace Shader
             const osg::Texture* normalMap = nullptr;
             const osg::Texture* roughnessMap = nullptr;
             const osg::Texture* specularMap = nullptr;
+            const osg::Texture* bumpMap = nullptr;
             for(unsigned int unit=0;unit<texAttributes.size();++unit)
             {
                 const osg::StateAttribute *attr = stateset->getTextureAttribute(unit, osg::StateAttribute::TEXTURE);
@@ -230,6 +233,21 @@ namespace Shader
                                 specularMap = texture;
                             else if (texName == "roughnessMap")
                                 roughnessMap = texture;
+                            else if (texName == "bumpMap")
+                            {
+                                bumpMap = texture;
+                                mRequirements.back().mShaderRequired = true;
+                                if (!writableStateSet)
+                                    writableStateSet = getWritableStateSet(node);
+                                // Bump maps are off by default as well
+                                writableStateSet->setTextureMode(unit, GL_TEXTURE_2D, osg::StateAttribute::ON);
+                            }
+                            else if (texName == "envMap")
+                            {
+                                static const bool preLightEnv = Settings::Manager::getBool("apply lighting to environment maps", "Shaders");
+                                if (preLightEnv)
+                                    mRequirements.back().mShaderRequired = true;
+                            }
                         }
                         else
                             Log(Debug::Error) << "ShaderVisitor encountered unknown texture " << texture;
@@ -244,7 +262,7 @@ namespace Shader
                 osg::ref_ptr<osg::Image> image;
                 bool normalHeight = false;
                 std::string normalHeightMap = normalMapFileName;
-                boost::replace_last(normalHeightMap, ".", mNormalHeightMapPattern + ".");
+                Misc::StringUtils::replaceLast(normalHeightMap, ".", mNormalHeightMapPattern + ".");
                 if (mImageManager.getVFS()->exists(normalHeightMap))
                 {
                     image = mImageManager.getImage(normalHeightMap);
@@ -252,14 +270,17 @@ namespace Shader
                 }
                 else
                 {
-                    boost::replace_last(normalMapFileName, ".", mNormalMapPattern + ".");
+                    Misc::StringUtils::replaceLast(normalMapFileName, ".", mNormalMapPattern + ".");
                     if (mImageManager.getVFS()->exists(normalMapFileName))
                     {
                         image = mImageManager.getImage(normalMapFileName);
                     }
                 }
+                // Avoid using the auto-detected normal map if it's already being used as a bump map.
+                // It's probably not an actual normal map.
+                bool hasNamesakeBumpMap = image && bumpMap && bumpMap->getImage(0) && image->getFileName() == bumpMap->getImage(0)->getFileName();
 
-                if (image)
+                if (!hasNamesakeBumpMap && image)
                 {
                     osg::ref_ptr<osg::Texture2D> normalMapTex (new osg::Texture2D(image));
                     normalMapTex->setTextureSize(image->s(), image->t());
@@ -283,7 +304,7 @@ namespace Shader
             if (mAutoUseSpecularMaps && diffuseMap != nullptr && specularMap == nullptr && diffuseMap->getImage(0))
             {
                 std::string specularMapFileName = diffuseMap->getImage(0)->getFileName();
-                boost::replace_last(specularMapFileName, ".", mSpecularMapPattern + ".");
+                Misc::StringUtils::replaceLast(specularMapFileName, ".", mSpecularMapPattern + ".");
                 if (mImageManager.getVFS()->exists(specularMapFileName))
                 {
                     osg::ref_ptr<osg::Image> image (mImageManager.getImage(specularMapFileName));

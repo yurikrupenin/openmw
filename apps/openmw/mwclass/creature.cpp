@@ -214,8 +214,9 @@ namespace MWClass
     std::string Creature::getName (const MWWorld::ConstPtr& ptr) const
     {
         const MWWorld::LiveCellRef<ESM::Creature> *ref = ptr.get<ESM::Creature>();
+        const std::string& name = ref->mBase->mName;
 
-        return ref->mBase->mName;
+        return !name.empty() ? name : ref->mBase->mId;
     }
 
     MWMechanics::CreatureStats& Creature::getCreatureStats (const MWWorld::Ptr& ptr) const
@@ -454,18 +455,15 @@ namespace MWClass
             // otherwise wait until death animation
             if(stats.isDeathAnimationFinished())
                 return std::shared_ptr<MWWorld::Action>(new MWWorld::ActionOpen(ptr));
-
-            // death animation is not finished, do nothing
-            return std::shared_ptr<MWWorld::Action> (new MWWorld::FailedAction(""));
         }
+        else if (!stats.getAiSequence().isInCombat() && !stats.getKnockedDown())
+            return std::shared_ptr<MWWorld::Action>(new MWWorld::ActionTalk(ptr));
 
-        if(stats.getAiSequence().isInCombat())
-            return std::shared_ptr<MWWorld::Action>(new MWWorld::FailedAction(""));
+        // Tribunal and some mod companions oddly enough must use open action as fallback
+        if (!getScript(ptr).empty() && ptr.getRefData().getLocals().getIntVar(getScript(ptr), "companion"))
+            return std::shared_ptr<MWWorld::Action>(new MWWorld::ActionOpen(ptr));
 
-        if(stats.getKnockedDown())
-            return std::shared_ptr<MWWorld::Action>(new MWWorld::FailedAction(""));
-
-        return std::shared_ptr<MWWorld::Action>(new MWWorld::ActionTalk(ptr));
+        return std::shared_ptr<MWWorld::Action>(new MWWorld::FailedAction(""));
     }
 
     MWWorld::ContainerStore& Creature::getContainerStore (const MWWorld::Ptr& ptr) const
@@ -558,6 +556,8 @@ namespace MWClass
         if(getMovementSettings(ptr).mPosition[0] != 0 && getMovementSettings(ptr).mPosition[1] == 0)
             moveSpeed *= 0.75f;
 
+        moveSpeed *= ptr.getClass().getMovementSettings(ptr).mSpeedFactor;
+
         return moveSpeed;
     }
 
@@ -586,7 +586,7 @@ namespace MWClass
         const MWWorld::LiveCellRef<ESM::Creature> *ref = ptr.get<ESM::Creature>();
 
         MWGui::ToolTipInfo info;
-        info.caption = MyGUI::TextIterator::toTagsString(ref->mBase->mName);
+        info.caption = MyGUI::TextIterator::toTagsString(getName(ptr));
 
         std::string text;
         if (MWBase::Environment::get().getWindowManager()->getFullHelp())
@@ -776,8 +776,6 @@ namespace MWClass
         if (!state.mHasCustomState)
             return;
 
-        const ESM::CreatureState& state2 = dynamic_cast<const ESM::CreatureState&> (state);
-
         if (state.mVersion > 0)
         {
             if (!ptr.getRefData().getCustomData())
@@ -797,16 +795,14 @@ namespace MWClass
             ensureCustomData(ptr); // in openmw 0.30 savegames not all state was saved yet, so need to load it regardless.
 
         CreatureCustomData& customData = ptr.getRefData().getCustomData()->asCreatureCustomData();
-
-        customData.mContainerStore->readState (state2.mInventory);
-        customData.mCreatureStats.readState (state2.mCreatureStats);
+        const ESM::CreatureState& creatureState = state.asCreatureState();
+        customData.mContainerStore->readState (creatureState.mInventory);
+        customData.mCreatureStats.readState (creatureState.mCreatureStats);
     }
 
     void Creature::writeAdditionalState (const MWWorld::ConstPtr& ptr, ESM::ObjectState& state)
         const
     {
-        ESM::CreatureState& state2 = dynamic_cast<ESM::CreatureState&> (state);
-
         if (!ptr.getRefData().getCustomData())
         {
             state.mHasCustomState = false;
@@ -814,9 +810,9 @@ namespace MWClass
         }
 
         const CreatureCustomData& customData = ptr.getRefData().getCustomData()->asCreatureCustomData();
-
-        customData.mContainerStore->writeState (state2.mInventory);
-        customData.mCreatureStats.writeState (state2.mCreatureStats);
+        ESM::CreatureState& creatureState = state.asCreatureState();
+        customData.mContainerStore->writeState (creatureState.mInventory);
+        customData.mCreatureStats.writeState (creatureState.mCreatureStats);
     }
 
     int Creature::getBaseGold(const MWWorld::ConstPtr& ptr) const

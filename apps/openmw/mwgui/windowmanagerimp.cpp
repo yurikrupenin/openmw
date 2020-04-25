@@ -241,7 +241,7 @@ namespace MWGui
         MyGUI::FactoryManager::getInstance().registerFactory<ResourceImageSetPointerFix>("Resource", "ResourceImageSetPointer");
         MyGUI::FactoryManager::getInstance().registerFactory<AutoSizedResourceSkin>("Resource", "AutoSizedResourceSkin");
         MyGUI::ResourceManager::getInstance().load("core.xml");
-        loadUserFonts();
+        WindowManager::loadUserFonts();
 
         bool keyboardNav = Settings::Manager::getBool("keyboard navigation", "GUI");
         mKeyboardNavigation.reset(new KeyboardNavigation());
@@ -1163,11 +1163,7 @@ namespace MWGui
 
     void WindowManager::setCursorVisible(bool visible)
     {
-        if (visible == mCursorVisible)
-            return;
         mCursorVisible = visible;
-        if (!visible)
-            mCursorActive = false;
     }
 
     void WindowManager::setCursorActive(bool active)
@@ -1898,9 +1894,10 @@ namespace MWGui
         setCursorVisible(false);
 
         if (mVideoWidget->hasAudioStream())
-            MWBase::Environment::get().getSoundManager()->pauseSounds(
+            MWBase::Environment::get().getSoundManager()->pauseSounds(MWSound::VideoPlayback,
                 ~MWSound::Type::Movie & MWSound::Type::Mask
             );
+
         osg::Timer frameTimer;
         while (mVideoWidget->update() && !MWBase::Environment::get().getStateManager()->hasQuitRequest())
         {
@@ -1910,9 +1907,15 @@ namespace MWGui
             MWBase::Environment::get().getInputManager()->update(dt, true, false);
 
             if (!MWBase::Environment::get().getInputManager()->isWindowVisible())
+            {
+                mVideoWidget->pause();
                 OpenThreads::Thread::microSleep(5000);
+            }
             else
             {
+                if (mVideoWidget->isPaused())
+                    mVideoWidget->resume();
+
                 mViewer->eventTraversal();
                 mViewer->updateTraversal();
                 mViewer->renderingTraversals();
@@ -1926,7 +1929,7 @@ namespace MWGui
         }
         mVideoWidget->stop();
 
-        MWBase::Environment::get().getSoundManager()->resumeSounds();
+        MWBase::Environment::get().getSoundManager()->resumeSounds(MWSound::VideoPlayback);
 
         setKeyFocusWidget(oldKeyFocus);
 

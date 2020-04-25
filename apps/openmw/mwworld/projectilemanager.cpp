@@ -262,7 +262,7 @@ namespace MWWorld
         {
             // Spawn at 0.75 * ActorHeight
             // Note: we ignore the collision box offset, this is required to make some flying creatures work as intended.
-            pos.z() += mPhysics->getHalfExtents(caster).z() * 2 * 0.75;
+            pos.z() += mPhysics->getRenderingHalfExtents(caster).z() * 2 * 0.75;
         }
 
         if (MWBase::Environment::get().getWorld()->isUnderwater(caster.getCell(), pos)) // Underwater casting not possible
@@ -290,6 +290,12 @@ namespace MWWorld
         // Non-projectile should have been removed by getMagicBoltData
         if (state.mEffects.mList.empty())
             return;
+
+        if (!caster.getClass().isActor() && fallbackDirection.length2() <= 0)
+        {
+            Log(Debug::Warning) << "Unable to launch magic bolt (direction to target is empty)";
+            return;
+        }
 
         MWWorld::ManualRef ref(MWBase::Environment::get().getWorld()->getStore(), state.mIdMagic.at(0));
         MWWorld::Ptr ptr = ref.getPtr();

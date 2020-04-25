@@ -127,7 +127,7 @@ namespace MWWorld
             void updateWeather(float duration, bool paused = false);
             int getDaysPerMonth (int month) const;
 
-            void rotateObjectImp (const Ptr& ptr, const osg::Vec3f& rot, bool adjust);
+            void rotateObjectImp (const Ptr& ptr, const osg::Vec3f& rot, MWBase::RotationFlags flags);
 
             Ptr moveObjectImp (const Ptr& ptr, float x, float y, float z, bool movePhysics=true, bool moveToActive=false);
             ///< @return an updated Ptr in case the Ptr's cell changes
@@ -225,6 +225,9 @@ namespace MWWorld
             CellStore *getInterior (const std::string& name) override;
 
             CellStore *getCell (const ESM::CellId& id) override;
+
+            void testExteriorCells() override;
+            void testInteriorCells() override;
 
             //switch to POV before showing player's death animation
             void useDeathCamera() override;
@@ -396,7 +399,8 @@ namespace MWWorld
             /// @note Rotations via this method use a different rotation order than the initial rotations in the CS. This
             /// could be considered a bug, but is needed for MW compatibility.
             /// \param adjust indicates rotation should be set or adjusted
-            void rotateObject (const Ptr& ptr,float x,float y,float z, bool adjust = false) override;
+            void rotateObject (const Ptr& ptr, float x, float y, float z,
+                MWBase::RotationFlags flags = MWBase::RotationFlag_inverseOrder) override;
 
             MWWorld::Ptr placeObject(const MWWorld::ConstPtr& ptr, MWWorld::CellStore* cell, ESM::Position pos) override;
             ///< Place an object. Makes a copy of the Ptr.
@@ -424,6 +428,8 @@ namespace MWWorld
             ///< cast a Ray and return true if there is an object in the ray path.
 
             bool castRay (float x1, float y1, float z1, float x2, float y2, float z2) override;
+
+            bool castRay(const osg::Vec3f& from, const osg::Vec3f& to, int mask, const MWWorld::ConstPtr& ignore) override;
 
             void setActorCollisionMode(const Ptr& ptr, bool internal, bool external) override;
             bool isActorCollisionEnabled(const Ptr& ptr) override;
@@ -521,7 +527,7 @@ namespace MWWorld
 
             osg::Matrixf getActorHeadTransform(const MWWorld::ConstPtr& actor) const override;
 
-            void togglePOV() override;
+            void togglePOV(bool force = false) override;
 
             bool isFirstPerson() const override;
 
@@ -577,6 +583,7 @@ namespace MWWorld
             ///< check if the player is allowed to rest
 
             void rest(double hours) override;
+            void rechargeItems(double duration, bool activeOnly) override;
 
             /// \todo Probably shouldn't be here
             MWRender::Animation* getAnimation(const MWWorld::Ptr &ptr) override;
@@ -722,6 +729,10 @@ namespace MWWorld
 
             /// Return physical half extents of the given actor to be used in pathfinding
             osg::Vec3f getPathfindingHalfExtents(const MWWorld::ConstPtr& actor) const override;
+
+            bool hasCollisionWithDoor(const MWWorld::ConstPtr& door, const osg::Vec3f& position, const osg::Vec3f& destination) const override;
+
+            bool isAreaOccupiedByOtherActor(const osg::Vec3f& position, const float radius, const MWWorld::ConstPtr& ignore) const override;
     };
 }
 

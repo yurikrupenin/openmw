@@ -369,7 +369,7 @@ void CSVRender::WorldspaceWidget::addVisibilitySelectorButtons (
 void CSVRender::WorldspaceWidget::addEditModeSelectorButtons (CSVWidget::SceneToolMode *tool)
 {
     /// \todo replace EditMode with suitable subclasses
-    tool->addButton (new InstanceMode (this, tool), "object");
+    tool->addButton (new InstanceMode (this, mRootNode, tool), "object");
     tool->addButton (new PathgridMode (this, tool), "pathgrid");
 }
 
@@ -612,6 +612,8 @@ void CSVRender::WorldspaceWidget::updateOverlay()
 
 void CSVRender::WorldspaceWidget::mouseMoveEvent (QMouseEvent *event)
 {
+    dynamic_cast<CSVRender::EditMode&> (*mEditMode->getCurrent()).mouseMoveEvent (event);
+
     if (mDragging)
     {
         int diffX = event->x() - mDragX;
