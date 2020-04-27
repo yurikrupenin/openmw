@@ -2,7 +2,7 @@
 
 const float normalScale  = 1.0;
 
-out vec4 FragColor[4];
+out vec4 FragColor[6];
 in vec2 texCoords;
 in vec4 pos_worldspace;
 in vec3 n_worldspace;
@@ -33,19 +33,10 @@ vec3 getNormalFromMap()
 }
 void main()
 {
-
 	FragColor[0] = texture(diffuseMap, texCoords).rgba;
-
-    vec3 nn = vec3(1.0);
-
-    // Convert [0; 1] range to [-1; 1].
-    //nn = 2.0 * texture2D(normalMap, texCoords.xy).xyz - vec3(1.0);
-    // Convert Tangent space to World space with TBN matrix.
-    //FragColor[1] = vec4(nn.x * t_worldspace + nn.y * b_worldspace + nn.z * n_worldspace, 1.0);
-
     FragColor[1] = vec4(getNormalFromMap(), 1.0);
-
     FragColor[2] = texture(roughnessMap, texCoords).rgba;
-
-    FragColor[3] = vec4(pos_worldspace.xyz, pos_worldspace.z);
+    FragColor[3] = texture(specularMap, texCoords).rgba;
+    FragColor[4] = vec4(pos_worldspace.xyz, pos_worldspace.z);
+    FragColor[5] = vec4(vec3(texCoords.xy, 0.5), 0.5);
 }
