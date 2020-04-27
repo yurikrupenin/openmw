@@ -198,27 +198,47 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
     p.graph->addChild(gbufGenerator);
     p.graph->addChild(finalCombine);
 
-    // Quads to display 1 pass textures.
-    osg::ref_ptr<osg::Camera> qTexN =
+    // Quads to display debug maps.
+    osg::ref_ptr<osg::Camera> normalQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0, 0.7, 0),
             gbuffer[GBUF_NORMAL],
             p.textureSize);
-    osg::ref_ptr<osg::Camera> qTexP =
+    osg::ref_ptr<osg::Camera> roughnessQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0, 0.35, 0),
             gbuffer[GBUF_ROUGHNESS],
             p.textureSize);
-    osg::ref_ptr<osg::Camera> qTexC =
+    osg::ref_ptr<osg::Camera> specularQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_SPECULAR],
             p.textureSize);
-    // Quad to display 3 pass final (screen) texture.
-    osg::ref_ptr<osg::Camera> qTexFinal =
+
+    osg::ref_ptr<osg::Camera> diffuseQuad =
+        createTextureDisplayQuad(
+            false,
+            osg::Vec3(0.7, 0.7, 0),
+            gbuffer[GBUF_DIFFUSE],
+            p.textureSize);
+    osg::ref_ptr<osg::Camera> posQuad =
+        createTextureDisplayQuad(
+            false,
+            osg::Vec3(0.7, 0.35, 0),
+            gbuffer[GBUF_POS],
+            p.textureSize);
+    osg::ref_ptr<osg::Camera> stencilQuad =
+        createTextureDisplayQuad(
+            false,
+            osg::Vec3(0.7, 0, 0),
+            gbuffer[GBUF_STENCIL],
+            p.textureSize);
+
+    // Final image
+    osg::ref_ptr<osg::Camera> finalTarget =
         createTextureDisplayQuad(
             true,
             osg::Vec3(0, 0, 0),
@@ -227,10 +247,13 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             1,
             1);
 
-    p.graph->addChild(qTexFinal.get());
-    p.graph->addChild(qTexN.get());
-    p.graph->addChild(qTexP.get());
-    p.graph->addChild(qTexC.get());
+    p.graph->addChild(finalTarget.get());
+    p.graph->addChild(normalQuad.get());
+    p.graph->addChild(roughnessQuad.get());
+    p.graph->addChild(specularQuad.get());
+    p.graph->addChild(diffuseQuad.get());
+    p.graph->addChild(posQuad.get());
+    p.graph->addChild(stencilQuad.get());
 
     return p;
 }

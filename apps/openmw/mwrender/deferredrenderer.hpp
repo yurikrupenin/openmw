@@ -40,7 +40,7 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(const bool final,
     osg::StateAttribute *tex,
     float scale,
     float width = 0.3,
-    float height = 0.2);
+    float height = 0.24);
 
 
 } /* namespace MWRender */
