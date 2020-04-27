@@ -10,6 +10,7 @@
 #include <osg/Texture>
 
 #include <components/sceneutil/lightmanager.hpp>
+#include <components/sceneutil/lightutil.hpp>
 #include <components/shader/shadervisitor.hpp>
 
 #include "resourcemanager.hpp"

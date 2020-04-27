@@ -763,7 +763,7 @@ namespace Resource
     Shader::ShaderVisitor *SceneManager::createShaderVisitor()
     {
         // TODO: make shading pipeline configurable at runtime
-        Shader::ShaderVisitor* shaderVisitor = new Shader::ShaderVisitor(*mShaderManager.get(), *mImageManager, *mLightMgr, *mLightCache, "deferred_pass2_vertex.glsl", "deferred_pass2_fragment.glsl", mShaderUniforms);
+        Shader::ShaderVisitor* shaderVisitor = new Shader::ShaderVisitor(*mShaderManager.get(), *mImageManager, "deferred_pass2_vertex.glsl", "deferred_pass2_fragment.glsl", mShaderUniforms);
         shaderVisitor->setForceShaders(mForceShaders);
         shaderVisitor->setAutoUseNormalMaps(mAutoUseNormalMaps);
         shaderVisitor->setNormalMapPattern(mNormalMapPattern);
