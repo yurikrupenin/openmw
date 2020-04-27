@@ -2,11 +2,8 @@
 
 #include <osg/PolygonMode>
 #include <osg/TextureRectangle>
-#include <osgDB/ReadFile>
-#include <osgShadow/SoftShadowMap>
 #include <osgViewer/Viewer>
 #include <osgViewer/ViewerEventHandlers>
-#include <osgUtil/TangentSpaceGenerator>
 
 
 namespace MWRender
@@ -130,39 +127,24 @@ osg::ref_ptr<osg::LightSource> createLight(const osg::Vec3 &pos)
     return light;
 }
 
-class CreateTangentSpace : public osg::NodeVisitor
-{
-public:
-    CreateTangentSpace() : NodeVisitor(NodeVisitor::TRAVERSE_ALL_CHILDREN), tsg(new osgUtil::TangentSpaceGenerator) {}
-    virtual void apply(osg::Geode& geode)
-    {
-        for (unsigned int i = 0; i < geode.getNumDrawables(); ++i)
-        {
-            osg::Geometry *geo = dynamic_cast<osg::Geometry *>(geode.getDrawable(i));
-            if (geo != NULL)
-            {
-                // assume the texture coordinate for normal maps is stored in unit #0
-                tsg->generate(geo, 3);
-                // pass2.vert expects the tangent array to be stored inside gl_MultiTexCoord1
-                geo->setVertexAttribArray(4, tsg->getTangentArray());
-            }
-        }
-        traverse(geode);
-    }
-private:
-    osg::ref_ptr<osgUtil::TangentSpaceGenerator> tsg;
-};
 
 DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
 {
+
+    //Shader::ShaderManager& shaderMgr = mResourceSystem->getSceneManager()->getShaderManager();
+    //osg::ref_ptr<osg::Shader> fragmentShader(shaderMgr.getShader("s360_fragment.glsl", defineMap, osg::Shader::FRAGMENT));
+    //osg::ref_ptr<osg::Shader> vertexShader(shaderMgr.getShader("s360_vertex.glsl", defineMap, osg::Shader::VERTEX));
+    //osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
+
     DeferredPipeline p;
     p.graph = new osg::Group();
-    p.textureSize = 1024;
+    p.textureWidth = 1920;
+    p.textureHeight = 1080;
 
     for (int pos = 0; pos < GBUF_MAX; pos++)
     {
         gbuffer[pos] = new osg::TextureRectangle;
-        gbuffer[pos]->setTextureSize(p.textureSize, p.textureSize);
+        gbuffer[pos]->setTextureSize(p.textureWidth, p.textureHeight);
         gbuffer[pos]->setInternalFormat(GL_RGBA);
         gbuffer[pos]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
         gbuffer[pos]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
@@ -172,13 +154,6 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
         gbuffer[pos]->setSourceFormat(GL_RGBA);
         gbuffer[pos]->setSourceType(GL_FLOAT);
     }
-
-
-    // pass2 shades expects tangent vectors to be available as texcoord array for texture #1
-    // we use osgUtil::TangentSpaceGenerator to generate these
-    //CreateTangentSpace cts;
-    //scene->accept(cts);
-
 
     osg::ref_ptr<osg::Camera> gbufGenerator =
         createRTTCamera(osg::Camera::COLOR_BUFFER, gbuffer[GBUF_DIFFUSE]);
@@ -204,38 +179,44 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0, 0.7, 0),
             gbuffer[GBUF_NORMAL],
-            p.textureSize);
+            p.textureWidth,
+            p.textureHeight);
     osg::ref_ptr<osg::Camera> roughnessQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0, 0.35, 0),
             gbuffer[GBUF_ROUGHNESS],
-            p.textureSize);
+            p.textureWidth,
+            p.textureHeight);
     osg::ref_ptr<osg::Camera> specularQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_SPECULAR],
-            p.textureSize);
+            p.textureWidth,
+            p.textureHeight);
 
     osg::ref_ptr<osg::Camera> diffuseQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0.7, 0.7, 0),
             gbuffer[GBUF_DIFFUSE],
-            p.textureSize);
+            p.textureWidth,
+            p.textureHeight);
     osg::ref_ptr<osg::Camera> posQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0.7, 0.35, 0),
             gbuffer[GBUF_POS],
-            p.textureSize);
+            p.textureWidth,
+            p.textureHeight);
     osg::ref_ptr<osg::Camera> stencilQuad =
         createTextureDisplayQuad(
             false,
             osg::Vec3(0.7, 0, 0),
             gbuffer[GBUF_STENCIL],
-            p.textureSize);
+            p.textureWidth,
+            p.textureHeight);
 
     // Final image
     osg::ref_ptr<osg::Camera> finalTarget =
@@ -243,7 +224,8 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             true,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_FINAL],
-            p.textureSize,
+            p.textureWidth,
+            p.textureHeight,
             1,
             1);
 
@@ -286,7 +268,8 @@ osg::Camera *createRTTCamera(osg::Camera::BufferComponent buffer,
 
 osg::Geode *createScreenQuad(float width,
     float height,
-    float scale,
+    float scaleX,
+    float scaleY,
     osg::Vec3 corner)
 {
     osg::Geometry* geom = osg::createTexturedQuadGeometry(
@@ -295,8 +278,8 @@ osg::Geode *createScreenQuad(float width,
         osg::Vec3(0, height, 0),
         0,
         0,
-        scale,
-        scale);
+        scaleX,
+        scaleY);
     osg::ref_ptr<osg::Geode> quad = new osg::Geode;
     quad->addDrawable(geom);
     int values = osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED;
@@ -312,12 +295,13 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
     const bool final,
     const osg::Vec3 &pos,
     osg::StateAttribute *tex,
-    float scale,
+    float scaleX,
+    float scaleY,
     float width,
     float height)
 {
     osg::ref_ptr<osg::Camera> hc = createHUDCamera();
-    osg::Geode* polyGeom = createScreenQuad(width, height, scale, pos);
+    osg::Geode* polyGeom = createScreenQuad(width, height, scaleX, scaleY, pos);
     hc->addChild(polyGeom); 
 
     osg::ref_ptr<osg::Program> program = new osg::Program;

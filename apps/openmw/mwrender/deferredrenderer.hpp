@@ -15,7 +15,8 @@ namespace MWRender
 
 struct DeferredPipeline
 {
-    int textureSize;
+    int textureWidth;
+    int textureHeight;
     osg::Group *graph;
 };
 
@@ -32,13 +33,15 @@ osg::Camera *createRTTCamera(osg::Camera::BufferComponent buffer,
 
 osg::Geode *createScreenQuad(float width,
     float height,
-    float scale = 1,
+    float scaleX = 1,
+    float scaleY = 1,
     osg::Vec3 corner = osg::Vec3());
 
 osg::ref_ptr<osg::Camera> createTextureDisplayQuad(const bool final,
     const osg::Vec3 &pos,
     osg::StateAttribute *tex,
-    float scale,
+    float scaleX,
+    float scaleY,
     float width = 0.3,
     float height = 0.24);
 
