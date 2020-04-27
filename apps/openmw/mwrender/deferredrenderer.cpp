@@ -1,7 +1,7 @@
 #include "deferredrenderer.hpp"
 
-#include <osg/AnimationPath>
 #include <osg/PolygonMode>
+#include <osg/TextureRectangle>
 #include <osgDB/ReadFile>
 #include <osgShadow/SoftShadowMap>
 #include <osgViewer/Viewer>
@@ -12,15 +12,99 @@
 namespace MWRender
 {
 
-osg::TextureRectangle *createFloatTextureRectangle(int textureSize)
+    typedef enum {
+        GBUF_DIFFUSE,
+        GBUF_NORMAL,
+        GBUF_ROUGHNESS,
+        GBUF_SPECULAR,
+        GBUF_POS,
+        GBUF_STENCIL,
+        GBUF_FINAL,
+        GBUF_MAX
+    } GBufferLayout;
+
+    osg::TextureRectangle* gbuffer[GBUF_MAX] = { 0,0,0,0,0,0,0 };
+
+static std::string vertex_shader =
 {
-    osg::ref_ptr<osg::TextureRectangle> tex2D = new osg::TextureRectangle;
-    tex2D->setTextureSize(textureSize, textureSize);
-    tex2D->setInternalFormat(GL_RGBA16F_ARB);
-    tex2D->setSourceFormat(GL_RGBA);
-    tex2D->setSourceType(GL_FLOAT);
-    return tex2D.release();
-}
+        "#version 330\n"
+        "layout(location = 0) in vec4 osg_Vertex;        \n"
+        "layout(location = 1) in vec3 osg_Normal;        \n"
+        "layout(location = 2) in vec4 osg_Color;        \n"
+        "layout(location = 3) in vec4 osg_MultiTexCoord0; \n"
+        "uniform mat4 osg_ModelViewProjectionMatrix; \n"
+        "out vec2 texCoords;"
+        "void main(void) \n"
+        "{ \n"
+                "texCoords = osg_MultiTexCoord0.st;\n"
+        "        gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex; \n"
+        "}\n"
+};
+
+static std::string def_frag_shader =
+{
+        "#version 330\n"
+        "uniform sampler2DRect textureID0;\n"
+
+        "in vec2 texCoords;"
+        "out vec4 target;"
+        "void main(void)\n"
+        "{\n"
+        "    target = vec4(texture( textureID0, texCoords.st ).rgb, 1);  \n"
+        "}\n"
+};
+
+static const char* combineShaderSource = {
+                               "#version 330\n"
+
+                               "const float gamma = 2.2;\n"
+                               "const float roughnessMultiplier = 1.0;\n"
+                               "const float glossMultiplier = 1.0;\n"
+                               "const float ambientLight = 4.13;\n"
+
+                               "uniform sampler2DRect diffuseMap;\n"
+                               "uniform sampler2DRect normalMap;\n"
+                               "uniform sampler2DRect specularMap;\n"
+                               "uniform sampler2DRect roughnessMap;\n"
+
+                               "in vec2 texCoords;\n"
+                               "out vec4 fragColor;\n"
+
+                               
+
+                               "void main(void)\n"
+                               "{\n"
+                                "float roughness = texture2DRect(roughnessMap, texCoords).r * roughnessMultiplier;\n"
+
+                                "//TODO: Adjust roughness!\n"
+
+                                "vec3 specular = pow(texture2DRect(specularMap, texCoords).rgb, vec3(gamma)) * glossMultiplier;\n"
+
+                                "vec4 diffuse = texture2DRect(diffuseMap, texCoords).rgba;\n"
+                                "vec3 albedo = pow(diffuse.rgb, vec3(gamma));\n"
+
+                                "vec3 Lo = vec3(0.0);\n"
+
+                                "//TODO: Per-light computation\n"
+
+                                "// Ambient lighting colculation\n"
+                                "// HACK: grab it from cell's ambient lighting\n"
+                                "vec3 ambient = vec3(ambientLight) * albedo;\n"
+                                
+                                "vec3 color = ambient + Lo;\n"
+                                "//HDR tonemapping\n"
+                                "color = color / (color + vec3(1.0));\n"
+
+                                "// gamma correct\n"
+                                "color = pow(color, vec3(1.0/gamma));\n"
+            
+                                "clamp(color, 0.0, 1.0);\n"
+
+                                "fragColor = vec4(color, diffuse.a);\n"
+                         
+                                "}\n"
+};
+
 
 osg::Camera *createHUDCamera(double left,
     double right,
@@ -58,9 +142,9 @@ public:
             if (geo != NULL)
             {
                 // assume the texture coordinate for normal maps is stored in unit #0
-                tsg->generate(geo, 0);
+                tsg->generate(geo, 3);
                 // pass2.vert expects the tangent array to be stored inside gl_MultiTexCoord1
-                geo->setTexCoordArray(1, tsg->getTangentArray());
+                geo->setVertexAttribArray(4, tsg->getTangentArray());
             }
         }
         traverse(geode);
@@ -73,53 +157,81 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
 {
     DeferredPipeline p;
     p.graph = new osg::Group();
-    p.textureSize = 4096;
+    p.textureSize = 1024;
+
+    for (int pos = 0; pos < GBUF_MAX; pos++)
+    {
+        gbuffer[pos] = new osg::TextureRectangle;
+        gbuffer[pos]->setTextureSize(p.textureSize, p.textureSize);
+        gbuffer[pos]->setInternalFormat(GL_RGBA);
+        gbuffer[pos]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
+        gbuffer[pos]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
+
+        gbuffer[pos]->setDataVariance(osg::Object::DYNAMIC);
+        gbuffer[pos]->setInternalFormat(GL_RGBA16F_ARB);
+        gbuffer[pos]->setSourceFormat(GL_RGBA);
+        gbuffer[pos]->setSourceType(GL_FLOAT);
+    }
 
 
     // pass2 shades expects tangent vectors to be available as texcoord array for texture #1
     // we use osgUtil::TangentSpaceGenerator to generate these
-    // CreateTangentSpace cts;
-    // scene->accept(cts);
+    //CreateTangentSpace cts;
+    //scene->accept(cts);
 
-    // Pass 2 (positions, normals, colors).
-    p.pass2Positions = createFloatTextureRectangle(p.textureSize);
-    p.pass2Normals = createFloatTextureRectangle(p.textureSize);
-    p.pass2Colors = createFloatTextureRectangle(p.textureSize);
-    osg::ref_ptr<osg::Camera> pass2 =
-        createRTTCamera(osg::Camera::COLOR_BUFFER0, p.pass2Positions);
-    pass2->attach(osg::Camera::COLOR_BUFFER1, p.pass2Normals);
-    pass2->attach(osg::Camera::COLOR_BUFFER2, p.pass2Colors);
-    pass2->addChild(scene.get());
 
-    /*
-    osg::ref_ptr<osg::StateSet> ss = setShaderProgram(pass2, "resources/shaders/deferred_pass2_vertex.glsl",
-          "resources/shaders/deferred_pass2_fragment.glsl");
+    osg::ref_ptr<osg::Camera> gbufGenerator =
+        createRTTCamera(osg::Camera::COLOR_BUFFER, gbuffer[GBUF_DIFFUSE]);
 
-    ss->setTextureAttributeAndModes(0, createTexture("Images/whitemetal_diffuse.jpg"));
-    ss->setTextureAttributeAndModes(1, createTexture("Images/whitemetal_normal.jpg"));
-    ss->addUniform(new osg::Uniform("normalMap", 0));
-    ss->addUniform(new osg::Uniform("diffuseMap", 1));
-    ss->addUniform(new osg::Uniform("useBumpMap", 1));
-    */
+    gbufGenerator->attach(osg::Camera::COLOR_BUFFER0, gbuffer[GBUF_DIFFUSE], 0, 1);
+    gbufGenerator->attach(osg::Camera::COLOR_BUFFER1, gbuffer[GBUF_NORMAL], 0, 1);
+    gbufGenerator->attach(osg::Camera::COLOR_BUFFER2, gbuffer[GBUF_ROUGHNESS], 0, 1);
+    gbufGenerator->attach(osg::Camera::COLOR_BUFFER3, gbuffer[GBUF_SPECULAR], 0, 1);
+    gbufGenerator->attach(osg::Camera::COLOR_BUFFER4, gbuffer[GBUF_POS], 0, 1);
+    gbufGenerator->attach(osg::Camera::COLOR_BUFFER5, gbuffer[GBUF_STENCIL], 0, 1);
+    gbufGenerator->addChild(scene.get());
     
-
-    // Pass 3 (final).
-    p.pass3Final = createFloatTextureRectangle(p.textureSize);
-    osg::ref_ptr<osg::Camera> pass3 =
-        createRTTCamera(osg::Camera::COLOR_BUFFER, p.pass3Final, true);
-    /*
-    ss = setShaderProgram(pass3, "resources/shaders/deferred_pass3_vertex.glsl", "resources/shaders/deferred_pass3_fragment.glsl");
-    ss->setTextureAttributeAndModes(0, p.pass2Positions);
-    ss->setTextureAttributeAndModes(1, p.pass2Normals);
-    ss->setTextureAttributeAndModes(2, p.pass2Colors);
-    ss->addUniform(new osg::Uniform("posMap", 0));
-    ss->addUniform(new osg::Uniform("normalMap", 1));
-    ss->addUniform(new osg::Uniform("colorMap", 2));
-    */
+    osg::ref_ptr<osg::Camera> finalCombine =
+        createRTTCamera(osg::Camera::COLOR_BUFFER, gbuffer[GBUF_FINAL], true);
 
     // Graph.
-    p.graph->addChild(pass2);
-    p.graph->addChild(pass3);
+    p.graph->addChild(gbufGenerator);
+    p.graph->addChild(finalCombine);
+
+    // Quads to display 1 pass textures.
+    osg::ref_ptr<osg::Camera> qTexN =
+        createTextureDisplayQuad(
+            false,
+            osg::Vec3(0, 0.7, 0),
+            gbuffer[GBUF_NORMAL],
+            p.textureSize);
+    osg::ref_ptr<osg::Camera> qTexP =
+        createTextureDisplayQuad(
+            false,
+            osg::Vec3(0, 0.35, 0),
+            gbuffer[GBUF_ROUGHNESS],
+            p.textureSize);
+    osg::ref_ptr<osg::Camera> qTexC =
+        createTextureDisplayQuad(
+            false,
+            osg::Vec3(0, 0, 0),
+            gbuffer[GBUF_SPECULAR],
+            p.textureSize);
+    // Quad to display 3 pass final (screen) texture.
+    osg::ref_ptr<osg::Camera> qTexFinal =
+        createTextureDisplayQuad(
+            true,
+            osg::Vec3(0, 0, 0),
+            gbuffer[GBUF_FINAL],
+            p.textureSize,
+            1,
+            1);
+
+    p.graph->addChild(qTexFinal.get());
+    p.graph->addChild(qTexN.get());
+    p.graph->addChild(qTexP.get());
+    p.graph->addChild(qTexC.get());
+
     return p;
 }
 
@@ -144,38 +256,9 @@ osg::Camera *createRTTCamera(osg::Camera::BufferComponent buffer,
         camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
         camera->setProjectionMatrix(osg::Matrix::ortho2D(0.0, 1.0, 0.0, 1.0));
         camera->setViewMatrix(osg::Matrix::identity());
-        camera->addChild(createScreenQuad(1.0f, 1.0f));
+        camera->addChild(createScreenQuad(1.0f, 1.0));
     }
     return camera.release();
-}
-
-osg::ref_ptr<osg::Group> createSceneRoom()
-{
-    // Room.
-    osg::ref_ptr<osg::MatrixTransform> room = new osg::MatrixTransform;
-    osg::ref_ptr<osg::Node> roomModel = osgDB::readNodeFile("simpleroom.osgt");
-    room->addChild(roomModel);
-    room->setMatrix(osg::Matrix::translate(0, 0, 1));
-    // Torus.
-    osg::ref_ptr<osg::MatrixTransform> torus = new osg::MatrixTransform;
-    osg::ref_ptr<osg::Node> torusModel = osgDB::readNodeFile("torus.osgt");
-    torus->addChild(torusModel);
-    setAnimationPath(torus, osg::Vec3(0, 0, 15), 6, 16);
-    // Torus2.
-    osg::ref_ptr<osg::MatrixTransform> torus2 = new osg::MatrixTransform;
-    torus2->addChild(torusModel);
-    setAnimationPath(torus2, osg::Vec3(-20, 0, 10), 20, 0);
-    // Torus3.
-    osg::ref_ptr<osg::MatrixTransform> torus3 = new osg::MatrixTransform;
-    torus3->addChild(torusModel);
-    setAnimationPath(torus3, osg::Vec3(0, 0, 40), 3, 25);
-    // Scene.
-    osg::ref_ptr<osg::Group> scene = new osg::Group;
-    scene->addChild(room);
-    scene->addChild(torus);
-    scene->addChild(torus2);
-    scene->addChild(torus3);
-    return scene;
 }
 
 osg::Geode *createScreenQuad(float width,
@@ -202,19 +285,8 @@ osg::Geode *createScreenQuad(float width,
     return quad.release();
 }
 
-osg::Texture2D *createTexture(const std::string &fileName)
-{
-    osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D;
-    texture->setImage(osgDB::readImageFile(fileName));
-    texture->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::REPEAT);
-    texture->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::REPEAT);
-    texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
-    texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-    texture->setMaxAnisotropy(16.0f);
-    return texture.release();
-}
-
 osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
+    const bool final,
     const osg::Vec3 &pos,
     osg::StateAttribute *tex,
     float scale,
@@ -222,126 +294,56 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
     float height)
 {
     osg::ref_ptr<osg::Camera> hc = createHUDCamera();
-    hc->addChild(createScreenQuad(width, height, scale, pos));
-    hc->getOrCreateStateSet()->setTextureAttributeAndModes(0, tex);
-    return hc;
-}
+    osg::Geode* polyGeom = createScreenQuad(width, height, scale, pos);
+    hc->addChild(polyGeom); 
 
-void setAnimationPath(osg::ref_ptr<osg::MatrixTransform> node,
-    const osg::Vec3 &center,
-    float time,
-    float radius)
-{
-    // Create animation.
-    osg::ref_ptr<osg::AnimationPath> path = new osg::AnimationPath;
-    path->setLoopMode(osg::AnimationPath::LOOP);
-    unsigned int numSamples = 32;
-    float delta_yaw = 2.0f * osg::PI / (static_cast<float>(numSamples) - 1.0f);
-    float delta_time = time / static_cast<float>(numSamples);
-    for (unsigned int i = 0; i < numSamples; ++i)
-    {
-        float yaw = delta_yaw * static_cast<float>(i);
-        osg::Vec3 pos(center.x() + sinf(yaw)*radius,
-            center.y() + cosf(yaw)*radius,
-            center.z());
-        osg::Quat rot(-yaw, osg::Z_AXIS);
-        path->insert(delta_time * static_cast<float>(i),
-            osg::AnimationPath::ControlPoint(pos, rot));
-    }
-    // Assign it.
-    node->setUpdateCallback(new osg::AnimationPathCallback(path.get()));
-}
-
-osg::ref_ptr<osg::StateSet> setShaderProgram(osg::ref_ptr<osg::Camera> pass,
-    const std::string& vert,
-    const std::string& frag)
-{
     osg::ref_ptr<osg::Program> program = new osg::Program;
 
+    if (!final)
+    {
+        hc->getOrCreateStateSet()->setTextureAttributeAndModes(0, tex);
 
-    auto vertexShader = osgDB::readShaderFile(vert);
-    vertexShader->setType(osg::Shader::VERTEX);
+        osg::ref_ptr<osg::Shader> vshader = new
+            osg::Shader(osg::Shader::VERTEX, vertex_shader);
+        osg::ref_ptr<osg::Shader> fshader = new
+            osg::Shader(osg::Shader::FRAGMENT, def_frag_shader);
+        program->addShader(vshader.get());
+        program->addShader(fshader.get());
 
-    auto fragmentShader = osgDB::readShaderFile(frag);
-    fragmentShader->setType(osg::Shader::FRAGMENT);
+        hc->getOrCreateStateSet()->setAttributeAndModes(program.get(),
+            osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+    }
+    else
+    {
+        osg::ref_ptr<osg::Shader> vshader = new
+            osg::Shader(osg::Shader::VERTEX, vertex_shader);
+        osg::ref_ptr<osg::Shader> fshader = new
+            osg::Shader(osg::Shader::FRAGMENT, combineShaderSource);
+        program->addShader(vshader.get());
+        program->addShader(fshader.get());
 
-    program->addShader(vertexShader);
-    program->addShader(fragmentShader);
-    osg::ref_ptr<osg::StateSet> ss = pass->getOrCreateStateSet();
-    ss->setAttributeAndModes(
-        program.get(),
-        osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-    return ss;
+        osg::StateSet* stateset = new osg::StateSet;
+
+        for (int current = 0; current < GBUF_MAX; current++) {
+            stateset->setTextureAttributeAndModes(current, gbuffer[current],
+                osg::StateAttribute::ON);
+        }
+
+        polyGeom->setStateSet(stateset);
+        
+        stateset->setAttributeAndModes(program.get(),
+            osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+
+        stateset->addUniform(new osg::Uniform("diffuseMap", GBUF_DIFFUSE));
+        stateset->addUniform(new osg::Uniform("normalMap", GBUF_NORMAL));
+        stateset->addUniform(new osg::Uniform("roughnessMap", GBUF_ROUGHNESS));
+        stateset->addUniform(new osg::Uniform("specularMap", GBUF_SPECULAR));
+        stateset->addUniform(new osg::Uniform("posMap", GBUF_POS));
+        stateset->addUniform(new osg::Uniform("stencilMap", GBUF_STENCIL));
+    }
+
+    return hc;
 }
-
-/*
-int main()
-{
-    // Useful declaration.
-    osg::ref_ptr<osg::StateSet> ss;
-    // Scene.
-    osg::Vec3 lightPos(0, 0, 80);
-    osg::ref_ptr<osg::Group> scene = createSceneRoom();
-    osg::ref_ptr<osg::LightSource> light = createLight(lightPos);
-    scene->addChild(light.get());
-    
-    DeferredPipeline p = createDeferredPipeline(scene);
-    // Quads to display 1 pass textures.
-    osg::ref_ptr<osg::Camera> qTexN =
-        createTextureDisplayQuad(osg::Vec3(0, 0.7, 0),
-            p.pass2Normals,
-            p.textureSize);
-    osg::ref_ptr<osg::Camera> qTexP =
-        createTextureDisplayQuad(osg::Vec3(0, 0.35, 0),
-            p.pass2Positions,
-            p.textureSize);
-    osg::ref_ptr<osg::Camera> qTexC =
-        createTextureDisplayQuad(osg::Vec3(0, 0, 0),
-            p.pass2Colors,
-            p.textureSize);
-    // Qaud to display 2 pass shadow texture.
-    osg::ref_ptr<osg::Camera> qTexS =
-        createTextureDisplayQuad(osg::Vec3(0.7, 0.7, 0),
-            p.pass1Shadows,
-            p.textureSize);
-    // Quad to display 3 pass final (screen) texture.
-    osg::ref_ptr<osg::Camera> qTexFinal =
-        createTextureDisplayQuad(osg::Vec3(0, 0, 0),
-            p.pass3Final,
-            p.textureSize,
-            1,
-            1);
-    // Must be processed before the first pass takes
-    // the result into pass1Shadows texture.
-    p.graph->insertChild(0, shadowedScene.get());
-    // Quads are displayed in order, so the biggest one (final) must be first,
-    // otherwise other quads won't be visible.
-    p.graph->addChild(qTexFinal.get());
-    p.graph->addChild(qTexN.get());
-    p.graph->addChild(qTexP.get());
-    p.graph->addChild(qTexC.get());
-    p.graph->addChild(qTexS.get());
-
-    // Display everything.
-    osgViewer::Viewer viewer;
-
-    // add the stats handler
-    viewer.addEventHandler(new osgViewer::StatsHandler);
-
-    // Make screenshots with 'c'.
-    viewer.addEventHandler(
-        new osgViewer::ScreenCaptureHandler(
-            new osgViewer::ScreenCaptureHandler::WriteToFile(
-                "screenshot",
-                "png",
-                osgViewer::ScreenCaptureHandler::WriteToFile::OVERWRITE)));
-
-    viewer.getCamera()->setComputeNearFarMode(osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR);
-    viewer.setSceneData(p.graph.get());
-
-    return viewer.run();
-}
-*/
 
 
 } /* namespace MWRender */
