@@ -5,6 +5,8 @@
 #include <osgViewer/Viewer>
 #include <osgViewer/ViewerEventHandlers>
 
+#include <components/resource/scenemanager.hpp>
+#include <components/shader/shadermanager.hpp>
 
 namespace MWRender
 {
@@ -21,86 +23,6 @@ namespace MWRender
     } GBufferLayout;
 
     osg::TextureRectangle* gbuffer[GBUF_MAX] = { 0,0,0,0,0,0,0 };
-
-static std::string vertex_shader =
-{
-        "#version 330\n"
-        "layout(location = 0) in vec4 osg_Vertex;        \n"
-        "layout(location = 1) in vec3 osg_Normal;        \n"
-        "layout(location = 2) in vec4 osg_Color;        \n"
-        "layout(location = 3) in vec4 osg_MultiTexCoord0; \n"
-        "uniform mat4 osg_ModelViewProjectionMatrix; \n"
-        "out vec2 texCoords;"
-        "void main(void) \n"
-        "{ \n"
-                "texCoords = osg_MultiTexCoord0.st;\n"
-        "        gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex; \n"
-        "}\n"
-};
-
-static std::string def_frag_shader =
-{
-        "#version 330\n"
-        "uniform sampler2DRect textureID0;\n"
-
-        "in vec2 texCoords;"
-        "out vec4 target;"
-        "void main(void)\n"
-        "{\n"
-        "    target = vec4(texture( textureID0, texCoords.st ).rgb, 1);  \n"
-        "}\n"
-};
-
-static const char* combineShaderSource = {
-                               "#version 330\n"
-
-                               "const float gamma = 2.2;\n"
-                               "const float roughnessMultiplier = 1.0;\n"
-                               "const float glossMultiplier = 1.0;\n"
-                               "const float ambientLight = 4.13;\n"
-
-                               "uniform sampler2DRect diffuseMap;\n"
-                               "uniform sampler2DRect normalMap;\n"
-                               "uniform sampler2DRect specularMap;\n"
-                               "uniform sampler2DRect roughnessMap;\n"
-
-                               "in vec2 texCoords;\n"
-                               "out vec4 fragColor;\n"
-
-                               
-
-                               "void main(void)\n"
-                               "{\n"
-                                "float roughness = texture2DRect(roughnessMap, texCoords).r * roughnessMultiplier;\n"
-
-                                "//TODO: Adjust roughness!\n"
-
-                                "vec3 specular = pow(texture2DRect(specularMap, texCoords).rgb, vec3(gamma)) * glossMultiplier;\n"
-
-                                "vec4 diffuse = texture2DRect(diffuseMap, texCoords).rgba;\n"
-                                "vec3 albedo = pow(diffuse.rgb, vec3(gamma));\n"
-
-                                "vec3 Lo = vec3(0.0);\n"
-
-                                "//TODO: Per-light computation\n"
-
-                                "// Ambient lighting colculation\n"
-                                "// HACK: grab it from cell's ambient lighting\n"
-                                "vec3 ambient = vec3(ambientLight) * albedo;\n"
-                                
-                                "vec3 color = ambient + Lo;\n"
-                                "//HDR tonemapping\n"
-                                "color = color / (color + vec3(1.0));\n"
-
-                                "// gamma correct\n"
-                                "color = pow(color, vec3(1.0/gamma));\n"
-            
-                                "clamp(color, 0.0, 1.0);\n"
-
-                                "fragColor = vec4(color, diffuse.a);\n"
-                         
-                                "}\n"
-};
 
 
 osg::Camera *createHUDCamera(double left,
@@ -128,16 +50,12 @@ osg::ref_ptr<osg::LightSource> createLight(const osg::Vec3 &pos)
 }
 
 
-DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
+DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
+                                        Resource::SceneManager *sceneMgr)
 {
-
-    //Shader::ShaderManager& shaderMgr = mResourceSystem->getSceneManager()->getShaderManager();
-    //osg::ref_ptr<osg::Shader> fragmentShader(shaderMgr.getShader("s360_fragment.glsl", defineMap, osg::Shader::FRAGMENT));
-    //osg::ref_ptr<osg::Shader> vertexShader(shaderMgr.getShader("s360_vertex.glsl", defineMap, osg::Shader::VERTEX));
-    //osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
-
     DeferredPipeline p;
     p.graph = new osg::Group();
+    p.sceneMgr = sceneMgr;
     p.textureWidth = 1920;
     p.textureHeight = 1080;
 
@@ -179,6 +97,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0, 0.7, 0),
             gbuffer[GBUF_NORMAL],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> roughnessQuad =
@@ -186,6 +105,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0, 0.35, 0),
             gbuffer[GBUF_ROUGHNESS],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> specularQuad =
@@ -193,6 +113,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_SPECULAR],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight);
 
@@ -201,6 +122,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0.7, 0.7, 0),
             gbuffer[GBUF_DIFFUSE],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> posQuad =
@@ -208,6 +130,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0.7, 0.35, 0),
             gbuffer[GBUF_POS],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> stencilQuad =
@@ -215,6 +138,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             false,
             osg::Vec3(0.7, 0, 0),
             gbuffer[GBUF_STENCIL],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight);
 
@@ -224,6 +148,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene)
             true,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_FINAL],
+            sceneMgr,
             p.textureWidth,
             p.textureHeight,
             1,
@@ -295,6 +220,7 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
     const bool final,
     const osg::Vec3 &pos,
     osg::StateAttribute *tex,
+    Resource::SceneManager *sceneMgr,
     float scaleX,
     float scaleY,
     float width,
@@ -306,14 +232,19 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
 
     osg::ref_ptr<osg::Program> program = new osg::Program;
 
+    Shader::ShaderManager &shaderMgr = sceneMgr->getShaderManager();
+    Shader::ShaderManager::DefineMap defineMap = shaderMgr.getGlobalDefines();
+
+    osg::ref_ptr<osg::Shader> vshader(
+        shaderMgr.getShader("rtt_display_vertex.glsl", defineMap, osg::Shader::VERTEX));
+
     if (!final)
     {
         hc->getOrCreateStateSet()->setTextureAttributeAndModes(0, tex);
 
-        osg::ref_ptr<osg::Shader> vshader = new
-            osg::Shader(osg::Shader::VERTEX, vertex_shader);
-        osg::ref_ptr<osg::Shader> fshader = new
-            osg::Shader(osg::Shader::FRAGMENT, def_frag_shader);
+        osg::ref_ptr<osg::Shader> fshader(
+            shaderMgr.getShader("rtt_display_fragment.glsl", defineMap, osg::Shader::FRAGMENT));
+
         program->addShader(vshader.get());
         program->addShader(fshader.get());
 
@@ -322,10 +253,9 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
     }
     else
     {
-        osg::ref_ptr<osg::Shader> vshader = new
-            osg::Shader(osg::Shader::VERTEX, vertex_shader);
-        osg::ref_ptr<osg::Shader> fshader = new
-            osg::Shader(osg::Shader::FRAGMENT, combineShaderSource);
+        osg::ref_ptr<osg::Shader> fshader(
+            shaderMgr.getShader("deferred_combine_fragment.glsl", defineMap, osg::Shader::FRAGMENT));;
+
         program->addShader(vshader.get());
         program->addShader(fshader.get());
 
