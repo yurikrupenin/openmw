@@ -1,12 +1,12 @@
-#version 330 core
+#version 330
 
 const float normalScale  = 1.0;
 
 out vec4 FragColor[6];
 in vec2 texCoords;
-in vec4 pos_worldspace;
+in vec3 worldPos;
 in vec3 n_worldspace;
-in vec3 t_worldspace;
+//in vec3 t_worldspace;
 in vec3 b_worldspace;
     
 
@@ -19,8 +19,8 @@ vec3 getNormalFromMap()
 {
     vec3 tangentNormal = texture(normalMap, texCoords).xyz * 2.0 - 1.0;
 
-    vec3 Q1 = dFdx(pos_worldspace.xyz);
-    vec3 Q2 = dFdy(pos_worldspace.xyz);
+    vec3 Q1 = dFdx(worldPos);
+    vec3 Q2 = dFdy(worldPos);
     vec2 st1 = dFdx(texCoords);
     vec2 st2 = dFdy(texCoords);
 
@@ -37,6 +37,6 @@ void main()
     FragColor[1] = vec4(getNormalFromMap(), 1.0);
     FragColor[2] = texture(roughnessMap, texCoords).rgba;
     FragColor[3] = texture(specularMap, texCoords).rgba;
-    FragColor[4] = vec4(pos_worldspace.xyz, pos_worldspace.z);
-    FragColor[5] = vec4(vec3(texCoords.xy, 0.5), 0.5);
+    FragColor[4] = vec4(worldPos.xyz, 1.0);
+    FragColor[5] = vec4(vec3(texCoords.xy, 0.0), 0.5);
 }

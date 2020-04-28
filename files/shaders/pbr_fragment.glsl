@@ -148,6 +148,8 @@ void main()
         float LdH   =  clamp(dot(L, H), 0.0,   1.0);
         float VdH   =  clamp(dot(V, H), 0.0,   1.0);
 
+        pointLights[i].color *= 30000;
+
         float distance = length(pointLights[i].position - WorldPos);
         float attenuation = attenuationRate / (distance * distance);
         vec3 radiance = (pointLights[i].color) * attenuation;
