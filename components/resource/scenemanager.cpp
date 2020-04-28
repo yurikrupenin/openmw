@@ -253,6 +253,11 @@ namespace Resource
         mShaderUniforms.push_back(uniform);
     }
 
+    SceneUtil::LightCache* SceneManager::getLightCache()
+    {
+        return mLightCache;
+    }
+
     void SceneManager::setLightManager(SceneUtil::LightManager *mgr)
     {
         mLightMgr = mgr;

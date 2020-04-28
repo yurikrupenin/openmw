@@ -9,6 +9,7 @@
 #include <osgShadow/ShadowedScene>
 
 #include <components/resource/scenemanager.hpp>
+#include <apps/openmw/mwrender/renderingmanager.hpp>
 
 
 namespace MWRender
@@ -21,6 +22,7 @@ struct DeferredPipeline
     int textureHeight;
     osg::Group *graph;
     Resource::SceneManager *sceneMgr;
+    MWRender::RenderingManager* renderMgr;
 };
 
 osg::Camera *createHUDCamera(double left = 0,
@@ -30,7 +32,8 @@ osg::Camera *createHUDCamera(double left = 0,
 
 DeferredPipeline createDeferredPipeline(
     osg::ref_ptr<osg::Group> scene,
-    Resource::SceneManager *sceneMgr);
+    Resource::SceneManager *sceneMgr,
+    MWRender::RenderingManager *renderMgr);
 
 osg::Camera *createRTTCamera(osg::Camera::BufferComponent buffer,
     osg::Texture *tex,
@@ -46,6 +49,7 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(const bool final,
     const osg::Vec3 &pos,
     osg::StateAttribute *tex,
     Resource::SceneManager* sceneMgr,
+    MWRender::RenderingManager* renderMgr,
     float scaleX,
     float scaleY,
     float width = 0.3,

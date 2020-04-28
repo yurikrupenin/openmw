@@ -1,5 +1,6 @@
 #include "deferredrenderer.hpp"
 
+#include <osg/Notify>
 #include <osg/PolygonMode>
 #include <osg/TextureRectangle>
 #include <osgViewer/Viewer>
@@ -23,6 +24,61 @@ namespace MWRender
     } GBufferLayout;
 
     osg::TextureRectangle* gbuffer[GBUF_MAX] = { 0,0,0,0,0,0,0 };
+
+    class DeferredTargetUpdateCallback : public osg::NodeCallback
+    {
+        Resource::SceneManager* mSceneMgr;
+        MWRender::RenderingManager* mRenderMgr;
+
+    public:
+
+        DeferredTargetUpdateCallback(
+            Resource::SceneManager* sceneMgr,
+            MWRender::RenderingManager* renderMgr) :
+            mSceneMgr(sceneMgr),
+            mRenderMgr(renderMgr)
+        {
+        }
+
+        virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
+        {
+            auto lightCache = mSceneMgr->getLightCache();
+            auto lights = lightCache->getLightsList(nv->getTraversalNumber());
+
+
+            for (unsigned int lightCount = 0; lightCount < lights->size(); ++lightCount)
+            {
+                auto light = lights->at(lightCount).mLightSource->getLight(0);
+
+                if (!light)
+                {
+                    continue;
+                }
+
+
+                std::string lightPositionUniformName = "pointLights[" + std::to_string(lightCount) + "].position";
+
+                node->getStateSet()->getOrCreateUniform(
+                    lightPositionUniformName.c_str(),
+                    osg::Uniform::Type::FLOAT_VEC4)->set(light->getPosition());
+
+
+                std::string lightColorUniformName = "pointLights[" + std::to_string(lightCount) + "].color";
+
+                node->getStateSet()->getOrCreateUniform(
+                    lightColorUniformName.c_str(),
+                    osg::Uniform::Type::FLOAT_VEC4)->set(light->getDiffuse());
+            }
+
+            node->getStateSet()->getOrCreateUniform(
+                "lightNumber",
+                osg::Uniform::Type::UNSIGNED_INT)->set(static_cast<unsigned int>(lights->size()));
+
+            node->getStateSet()->getOrCreateUniform(
+                "cameraPos",
+                osg::Uniform::Type::FLOAT_VEC3)->set(mRenderMgr->getCameraPosition());
+        }
+    };
 
 
 osg::Camera *createHUDCamera(double left,
@@ -51,11 +107,13 @@ osg::ref_ptr<osg::LightSource> createLight(const osg::Vec3 &pos)
 
 
 DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
-                                        Resource::SceneManager *sceneMgr)
+                                        Resource::SceneManager *sceneMgr,
+                                        MWRender::RenderingManager *renderMgr)
 {
     DeferredPipeline p;
     p.graph = new osg::Group();
     p.sceneMgr = sceneMgr;
+    p.renderMgr = renderMgr;
     p.textureWidth = 1920;
     p.textureHeight = 1080;
 
@@ -98,6 +156,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0, 0.7, 0),
             gbuffer[GBUF_NORMAL],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> roughnessQuad =
@@ -106,6 +165,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0, 0.35, 0),
             gbuffer[GBUF_ROUGHNESS],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> specularQuad =
@@ -114,6 +174,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_SPECULAR],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight);
 
@@ -123,6 +184,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0.7, 0.7, 0),
             gbuffer[GBUF_DIFFUSE],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> posQuad =
@@ -131,6 +193,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0.7, 0.35, 0),
             gbuffer[GBUF_POS],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight);
     osg::ref_ptr<osg::Camera> stencilQuad =
@@ -139,6 +202,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0.7, 0, 0),
             gbuffer[GBUF_STENCIL],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight);
 
@@ -149,6 +213,7 @@ DeferredPipeline createDeferredPipeline(osg::ref_ptr<osg::Group> scene,
             osg::Vec3(0, 0, 0),
             gbuffer[GBUF_FINAL],
             sceneMgr,
+            renderMgr,
             p.textureWidth,
             p.textureHeight,
             1,
@@ -218,9 +283,10 @@ osg::Geode *createScreenQuad(float width,
 
 osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
     const bool final,
-    const osg::Vec3 &pos,
-    osg::StateAttribute *tex,
-    Resource::SceneManager *sceneMgr,
+    const osg::Vec3& pos,
+    osg::StateAttribute* tex,
+    Resource::SceneManager* sceneMgr,
+    MWRender::RenderingManager* renderMgr,
     float scaleX,
     float scaleY,
     float width,
@@ -266,6 +332,8 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
                 osg::StateAttribute::ON);
         }
 
+        
+
         polyGeom->setStateSet(stateset);
         
         stateset->setAttributeAndModes(program.get(),
@@ -277,6 +345,8 @@ osg::ref_ptr<osg::Camera> createTextureDisplayQuad(
         stateset->addUniform(new osg::Uniform("specularMap", GBUF_SPECULAR));
         stateset->addUniform(new osg::Uniform("posMap", GBUF_POS));
         stateset->addUniform(new osg::Uniform("stencilMap", GBUF_STENCIL));
+
+        polyGeom->setUpdateCallback(new DeferredTargetUpdateCallback(sceneMgr, renderMgr));
     }
 
     return hc;

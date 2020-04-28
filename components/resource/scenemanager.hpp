@@ -62,6 +62,8 @@ namespace Resource
 
         void addShaderUniform(osg::Uniform *uniform);
 
+        SceneUtil::LightCache* getLightCache();
+
         void setLightManager(SceneUtil::LightManager *mgr);
 
         void setClampLighting(bool clamp);

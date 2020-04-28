@@ -401,7 +401,7 @@ namespace MWRender
         mRootNode->getOrCreateStateSet()->addUniform(new osg::Uniform("near", mNearClip));
         mRootNode->getOrCreateStateSet()->addUniform(new osg::Uniform("far", mViewDistance));
 
-        DeferredPipeline p = createDeferredPipeline(mRootNode, mResourceSystem->getSceneManager());
+        DeferredPipeline p = createDeferredPipeline(mRootNode, mResourceSystem->getSceneManager(), this);
 
         mViewer->getCamera()->setComputeNearFarMode(osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR);
         mViewer->setSceneData(p.graph);
